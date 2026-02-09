@@ -1,0 +1,2527 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orb Arena - Multiplayer Game</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0a1a;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            overflow: hidden;
+            color: #fff;
+        }
+
+        /* Start Screen */
+        #start-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: linear-gradient(135deg, #0a0a1a 0%, #1a1a3a 50%, #0a0a1a 100%);
+            z-index: 100;
+            overflow-y: auto;
+            -webkit-overflow-scrolling: touch;
+            padding: env(safe-area-inset-top) 0 env(safe-area-inset-bottom);
+        }
+
+        #start-screen h1 {
+            font-size: 4rem;
+            margin-bottom: 0.5rem;
+            background: linear-gradient(90deg, #00ff88, #00d4ff, #ff00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 50px rgba(0, 255, 136, 0.5);
+            animation: glow 2s ease-in-out infinite alternate;
+            text-align: center;
+            width: 100%;
+            padding: 0 20px;
+        }
+
+        @media (max-width: 480px) {
+            #start-screen {
+                justify-content: flex-start;
+                padding: 30px 0 40px;
+            }
+            #start-screen h1 {
+                font-size: 2.5rem;
+            }
+            #start-screen p {
+                font-size: 1rem;
+            }
+            .guide { padding: 0 10px; }
+            .guide-card { padding: 8px 10px; }
+            .guide-card ul { font-size: 0.72rem; }
+            .guide-controls { flex-wrap: wrap; gap: 10px; font-size: 0.72rem; }
+        }
+
+        @keyframes glow {
+            from { filter: drop-shadow(0 0 20px rgba(0, 255, 136, 0.5)); }
+            to { filter: drop-shadow(0 0 40px rgba(0, 212, 255, 0.8)); }
+        }
+
+        #start-screen p {
+            color: #888;
+            margin-bottom: 2rem;
+            font-size: 1.2rem;
+        }
+
+        #name-input {
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            border: 2px solid #333;
+            border-radius: 50px;
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            width: 300px;
+            text-align: center;
+            margin-bottom: 1rem;
+            outline: none;
+            transition: all 0.3s;
+        }
+
+        #name-input:focus {
+            border-color: #00ff88;
+            box-shadow: 0 0 20px rgba(0, 255, 136, 0.3);
+        }
+
+
+        #play-btn {
+            padding: 1rem 3rem;
+            font-size: 1.3rem;
+            border: none;
+            border-radius: 50px;
+            background: linear-gradient(90deg, #00ff88, #00d4ff);
+            color: #000;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #play-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(0, 255, 136, 0.5);
+        }
+
+        #play-btn:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .guide {
+            margin-top: 1.5rem;
+            max-width: 520px;
+            width: 100%;
+            padding: 0 20px;
+        }
+
+        .guide-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .guide-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            padding: 10px 12px;
+            text-align: left;
+        }
+
+        .guide-card h3 {
+            font-size: 0.7rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 6px;
+            color: #00ff88;
+        }
+
+        .guide-card ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            font-size: 0.78rem;
+            color: #999;
+            line-height: 1.6;
+        }
+
+        .guide-card li::before {
+            margin-right: 5px;
+        }
+
+        .guide-card .orb-green::before { content: "\25CF"; color: #00ff88; }
+        .guide-card .orb-gold::before { content: "\25CF"; color: #ffd700; }
+        .guide-card .orb-red::before { content: "\25CF"; color: #ff4444; }
+        .guide-card .orb-purple::before { content: "\25CF"; color: #aa55ff; }
+        .guide-card .orb-cyan::before { content: "\25CF"; color: #00d4ff; }
+
+        .guide-controls {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 10px;
+            font-size: 0.78rem;
+            color: #999;
+        }
+
+        .guide-controls kbd {
+            background: rgba(255, 255, 255, 0.1);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-family: inherit;
+            font-size: 0.75rem;
+            color: #ccc;
+        }
+
+        /* Game Canvas */
+        #game-canvas {
+            display: block;
+            background: #0a0a1a;
+            touch-action: none;
+        }
+
+        /* HUD */
+        #hud {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            display: none;
+        }
+
+        #score-display {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #fff;
+            text-shadow: 0 0 10px rgba(0, 0, 0, 0.8);
+        }
+
+        #score-display span {
+            color: #00ff88;
+        }
+
+        /* Leaderboard */
+        #leaderboard {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 15px 20px;
+            border-radius: 10px;
+            z-index: 10;
+            display: none;
+            min-width: 200px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        #leaderboard h3 {
+            margin-bottom: 10px;
+            color: #00d4ff;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+
+        #leaderboard-list {
+            list-style: none;
+        }
+
+        #leaderboard-list li {
+            padding: 5px 0;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+        }
+
+        #leaderboard-list li:last-child {
+            border-bottom: none;
+        }
+
+        #leaderboard-list li.you {
+            color: #00ff88;
+            font-weight: bold;
+        }
+
+        /* Death Screen */
+        #death-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            background: rgba(0, 0, 0, 0.85);
+            z-index: 50;
+        }
+
+        #death-screen h2 {
+            font-size: 3rem;
+            color: #ff4444;
+            margin-bottom: 1rem;
+            text-align: center;
+            width: 100%;
+            padding: 0 20px;
+        }
+
+        @media (max-width: 480px) {
+            #death-screen h2 {
+                font-size: 2rem;
+            }
+            #death-screen p {
+                font-size: 1.2rem;
+            }
+        }
+
+        #death-screen p {
+            font-size: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        #death-screen p span {
+            color: #00ff88;
+        }
+
+        #respawn-btn {
+            padding: 1rem 2rem;
+            font-size: 1.2rem;
+            border: none;
+            border-radius: 50px;
+            background: linear-gradient(90deg, #ff4444, #ff8844);
+            color: #fff;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #respawn-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 30px rgba(255, 68, 68, 0.5);
+        }
+
+        /* Minimap */
+        #minimap {
+            position: fixed;
+            top: 60px;
+            left: 20px;
+            width: 150px;
+            height: 150px;
+            background: rgba(0, 0, 0, 0.5);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+            z-index: 10;
+            display: none;
+        }
+
+
+        /* Mobile Boost Button */
+        #boost-btn {
+            position: fixed;
+            bottom: 40px;
+            left: 20px;
+            transform: none;
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(0, 255, 255, 0.3), rgba(0, 200, 255, 0.2));
+            border: 3px solid rgba(0, 255, 255, 0.6);
+            color: #00ffff;
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            transition: all 0.15s;
+        }
+
+        #boost-btn:active, #boost-btn.pressed {
+            transform: scale(0.9);
+            background: linear-gradient(135deg, rgba(0, 255, 255, 0.6), rgba(0, 200, 255, 0.5));
+            box-shadow: 0 0 30px rgba(0, 255, 255, 0.6);
+        }
+
+        #boost-btn.cooldown {
+            border-color: rgba(100, 100, 100, 0.6);
+            color: #666;
+            background: rgba(50, 50, 50, 0.3);
+        }
+
+        #boost-btn.boosting {
+            border-color: #00ffff;
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.8);
+            animation: boostPulse 0.25s ease-out;
+        }
+
+        @keyframes boostPulse {
+            0% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+
+        /* Mobile Shoot Button */
+        #shoot-btn {
+            position: fixed;
+            bottom: 135px;
+            left: 20px;
+            transform: none;
+            width: 70px;
+            height: 70px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, rgba(255, 100, 50, 0.3), rgba(255, 50, 50, 0.2));
+            border: 3px solid rgba(255, 100, 50, 0.6);
+            color: #ff6632;
+            font-size: 11px;
+            font-weight: bold;
+            text-transform: uppercase;
+            cursor: pointer;
+            z-index: 20;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: manipulation;
+            transition: all 0.15s;
+        }
+
+        #shoot-btn:active, #shoot-btn.pressed {
+            transform: scale(0.9);
+            background: linear-gradient(135deg, rgba(255, 100, 50, 0.6), rgba(255, 50, 50, 0.5));
+            box-shadow: 0 0 30px rgba(255, 100, 50, 0.6);
+        }
+
+        #shoot-btn.cooldown {
+            border-color: rgba(100, 100, 100, 0.6);
+            color: #666;
+            background: rgba(50, 50, 50, 0.3);
+        }
+
+        /* Critical Mass Warning HUD */
+        #critical-mass-hud {
+            position: fixed;
+            bottom: 40px;
+            left: 55%;
+            transform: translateX(-50%);
+            padding: 8px 20px;
+            border-radius: 10px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            z-index: 15;
+            display: none;
+            text-align: center;
+            border: 2px solid;
+        }
+
+        /* Power-Up HUD */
+        #powerup-hud {
+            position: fixed;
+            top: 218px;
+            left: 20px;
+            padding: 5px 15px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            z-index: 15;
+            display: none;
+            border: 2px solid;
+        }
+
+        /* Disaster Warning Banner */
+        #disaster-hud {
+            position: fixed;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 10px 30px;
+            border-radius: 12px;
+            font-size: 1.3rem;
+            font-weight: bold;
+            z-index: 25;
+            display: none;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            pointer-events: none;
+        }
+
+        #disaster-hud.warning {
+            background: rgba(255, 200, 0, 0.25);
+            border: 2px solid #ffcc00;
+            color: #ffcc00;
+            animation: disasterPulse 0.5s ease-in-out infinite alternate;
+        }
+
+        #disaster-hud.active {
+            background: rgba(255, 50, 50, 0.25);
+            border: 2px solid #ff4444;
+            color: #ff6666;
+        }
+
+        #disaster-hud.active.fog {
+            background: rgba(100, 100, 150, 0.25);
+            border-color: #8888cc;
+            color: #aaaaee;
+        }
+
+        #disaster-hud.active.frenzy {
+            background: rgba(0, 255, 100, 0.25);
+            border-color: #00ff88;
+            color: #00ff88;
+        }
+
+        @keyframes disasterPulse {
+            from { opacity: 0.7; }
+            to { opacity: 1; }
+        }
+
+        /* Mobile-specific adjustments */
+        @media (pointer: coarse) {
+            #boost-btn, #shoot-btn {
+                display: flex;
+            }
+        }
+
+        /* Also show for narrow screens */
+        @media (max-width: 768px) {
+            #boost-btn, #shoot-btn {
+                display: flex;
+            }
+
+            #leaderboard {
+                padding: 10px 12px;
+                min-width: 150px;
+                font-size: 0.8rem;
+            }
+
+            #score-display {
+                font-size: 1.5rem;
+            }
+
+            #minimap {
+                width: 100px;
+                height: 100px;
+            }
+
+            #powerup-hud {
+                top: 168px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Start Screen -->
+    <div id="start-screen">
+        <h1>ORB ARENA</h1>
+        <p>Consume or be consumed</p>
+        <input type="text" id="name-input" placeholder="Enter your name" maxlength="15" autofocus>
+
+        <button id="play-btn">Play</button>
+        <div class="guide">
+            <div class="guide-grid">
+                <div class="guide-card">
+                    <h3>Objective</h3>
+                    <ul>
+                        <li class="orb-green">Eat green orbs to grow</li>
+                        <li class="orb-gold">Hunt gold orbs for 5x energy</li>
+                        <li class="orb-cyan">Consume players smaller than you</li>
+                        <li class="orb-red">Avoid red spikes</li>
+                    </ul>
+                </div>
+                <div class="guide-card">
+                    <h3>Power-Ups</h3>
+                    <ul>
+                        <li class="orb-purple">Shield &mdash; block one hit</li>
+                        <li class="orb-purple">Rapid Fire &mdash; 2x shoot speed</li>
+                        <li class="orb-purple">Magnet &mdash; pull nearby orbs</li>
+                        <li class="orb-purple">Phantom &mdash; pass through walls</li>
+                    </ul>
+                </div>
+                <div class="guide-card">
+                    <h3>Combat</h3>
+                    <ul>
+                        <li class="orb-cyan">Shoot projectiles (costs mass)</li>
+                        <li class="orb-cyan">Must be 20% larger to eat rivals</li>
+                        <li class="orb-cyan">Boost to dash (costs mass)</li>
+                        <li class="orb-red">Critical mass &mdash; too big = explode!</li>
+                    </ul>
+                </div>
+                <div class="guide-card">
+                    <h3>Disasters</h3>
+                    <ul>
+                        <li class="orb-red">Black Hole &mdash; pulls you in</li>
+                        <li class="orb-red">Meteor Shower &mdash; dodge impacts</li>
+                        <li class="orb-red">Supernova &mdash; expanding shockwave</li>
+                        <li class="orb-red">Earthquake &mdash; shakes the arena</li>
+                        <li class="orb-red">Fog of War &mdash; limited vision</li>
+                        <li class="orb-gold">Feeding Frenzy &mdash; 2x growth!</li>
+                    </ul>
+                </div>
+                <div class="guide-controls">
+                    <span>Move <kbd>Mouse</kbd> / <kbd>Touch</kbd></span>
+                    <span>Boost <kbd>Space</kbd></span>
+                    <span>Shoot <kbd>Click</kbd> / <kbd>Tap</kbd></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD -->
+    <div id="hud">
+        <div id="score-display">Score: <span>0</span></div>
+    </div>
+
+    <!-- Leaderboard -->
+    <div id="leaderboard">
+        <h3>Leaderboard</h3>
+        <ol id="leaderboard-list"></ol>
+    </div>
+
+    <!-- Minimap -->
+    <canvas id="minimap"></canvas>
+
+    <!-- Death Screen -->
+    <div id="death-screen">
+        <h2>YOU WERE CONSUMED!</h2>
+        <p>Final Score: <span id="final-score">0</span></p>
+        <button id="respawn-btn">Play Again</button>
+    </div>
+
+    <!-- Disaster Warning/Status -->
+    <div id="disaster-hud"></div>
+
+    <!-- Critical Mass Warning -->
+    <div id="critical-mass-hud"></div>
+
+    <!-- Power-Up HUD -->
+    <div id="powerup-hud"></div>
+
+    <!-- Connection Status -->
+
+
+    <!-- Mobile Boost Button -->
+    <button id="boost-btn">BOOST</button>
+
+    <!-- Mobile Shoot Button -->
+    <button id="shoot-btn">SHOOT</button>
+
+    <script>
+        // Game state
+        const state = {
+            connected: false,
+            playing: false,
+            you: null,
+            players: [],
+            energyOrbs: [],
+            spikeOrbs: [],
+            goldenOrbs: [],
+            projectiles: [],
+            powerupOrbs: [],
+            powerupPopup: null,
+            walls: [],
+            killFeed: [],
+            world: { width: 2000, height: 2000 },
+            leaderboard: [],
+            camera: { x: 0, y: 0 },
+            lastScore: 0,
+            disaster: { active: null, warning: null }
+        };
+
+        // ── Visual Effects System ──
+        const particles = [];
+        const MAX_PARTICLES = 800;
+
+        let vfxShakeIntensity = 0;
+        const vfxShakeDecay = 0.9;
+        let vfxShakeX = 0;
+        let vfxShakeY = 0;
+
+        let prevEnergyOrbs = new Map();
+        let prevGoldenOrbs = new Map();
+
+        const killPopups = [];
+        const killRings = [];
+
+        function spawnParticle(config) {
+            if (particles.length >= MAX_PARTICLES) return;
+            particles.push({
+                x: config.x,
+                y: config.y,
+                vx: config.vx || 0,
+                vy: config.vy || 0,
+                radius: config.radius || 3,
+                color: config.color || '#ffffff',
+                alpha: config.alpha || 1.0,
+                life: config.life || 30,
+                maxLife: config.life || 30,
+            });
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vx *= 0.95;
+                p.vy *= 0.95;
+                p.life--;
+                p.alpha = Math.max(0, p.life / p.maxLife);
+                p.radius *= 0.98;
+                if (p.life <= 0) {
+                    particles[i] = particles[particles.length - 1];
+                    particles.pop();
+                }
+            }
+        }
+
+        function renderParticles() {
+            const vw = canvas.width / currentZoom;
+            const vh = canvas.height / currentZoom;
+            for (let i = 0; i < particles.length; i++) {
+                const p = particles[i];
+                const sx = p.x - state.camera.x;
+                const sy = p.y - state.camera.y;
+                if (sx < -20 || sx > vw + 20 || sy < -20 || sy > vh + 20) continue;
+                ctx.globalAlpha = p.alpha;
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.arc(sx, sy, Math.max(0.5, p.radius), 0, Math.PI * 2);
+                ctx.fill();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function spawnOrbBurst(x, y, color, radius, isGolden) {
+            const count = isGolden ? 12 : 6;
+            for (let i = 0; i < count; i++) {
+                const angle = (Math.PI * 2 * i) / count + (Math.random() - 0.5) * 0.5;
+                const speed = 1.5 + Math.random() * 2.5;
+                spawnParticle({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: isGolden ? 3.5 : 2.5,
+                    color: color,
+                    life: isGolden ? 25 : 18,
+                });
+            }
+        }
+
+        function triggerScreenShake(intensity) {
+            vfxShakeIntensity = Math.max(vfxShakeIntensity, intensity);
+        }
+
+        function updateScreenShake() {
+            if (vfxShakeIntensity > 0.1) {
+                vfxShakeX = (Math.random() - 0.5) * vfxShakeIntensity;
+                vfxShakeY = (Math.random() - 0.5) * vfxShakeIntensity;
+                vfxShakeIntensity *= vfxShakeDecay;
+            } else {
+                vfxShakeIntensity = 0;
+                vfxShakeX = 0;
+                vfxShakeY = 0;
+            }
+        }
+
+        function detectOrbConsumption(newData) {
+            const currentEnergyIds = new Set();
+            const currentGoldenIds = new Set();
+
+            if (newData.energy_orbs) {
+                newData.energy_orbs.forEach(o => currentEnergyIds.add(o.id));
+            }
+            if (newData.golden_orbs) {
+                newData.golden_orbs.forEach(o => currentGoldenIds.add(o.id));
+            }
+
+            for (const [id, orb] of prevEnergyOrbs) {
+                if (!currentEnergyIds.has(id)) {
+                    spawnOrbBurst(orb.x, orb.y, orb.color, orb.radius, false);
+                }
+            }
+
+            for (const [id, orb] of prevGoldenOrbs) {
+                if (!currentGoldenIds.has(id)) {
+                    spawnOrbBurst(orb.x, orb.y, '#ffd700', orb.radius, true);
+                }
+            }
+
+            prevEnergyOrbs = new Map();
+            if (newData.energy_orbs) {
+                newData.energy_orbs.forEach(o => prevEnergyOrbs.set(o.id, o));
+            }
+            prevGoldenOrbs = new Map();
+            if (newData.golden_orbs) {
+                newData.golden_orbs.forEach(o => prevGoldenOrbs.set(o.id, o));
+            }
+        }
+
+        function spawnKillEffects(x, y, scoreDelta, victimColor, consumerRadius) {
+            killPopups.push({
+                x: x,
+                y: y,
+                text: '+' + scoreDelta,
+                time: Date.now(),
+                duration: 1500,
+            });
+            killRings.push({
+                x: x,
+                y: y,
+                color: victimColor,
+                startRadius: consumerRadius,
+                maxRadius: consumerRadius * 3,
+                time: Date.now(),
+                duration: 500,
+            });
+        }
+
+        function updateKillEffects() {
+            const now = Date.now();
+            for (let i = killPopups.length - 1; i >= 0; i--) {
+                if (now - killPopups[i].time > killPopups[i].duration) {
+                    killPopups.splice(i, 1);
+                }
+            }
+            for (let i = killRings.length - 1; i >= 0; i--) {
+                if (now - killRings[i].time > killRings[i].duration) {
+                    killRings.splice(i, 1);
+                }
+            }
+        }
+
+        function renderKillRings() {
+            const now = Date.now();
+            const vw = canvas.width / currentZoom;
+            const vh = canvas.height / currentZoom;
+            for (let i = 0; i < killRings.length; i++) {
+                const ring = killRings[i];
+                const elapsed = now - ring.time;
+                const t = elapsed / ring.duration;
+                if (t >= 1) continue;
+
+                const sx = ring.x - state.camera.x;
+                const sy = ring.y - state.camera.y;
+                const currentRadius = ring.startRadius + (ring.maxRadius - ring.startRadius) * t;
+                if (sx + currentRadius < 0 || sx - currentRadius > vw || sy + currentRadius < 0 || sy - currentRadius > vh) continue;
+
+                const alpha = 0.5 * (1 - t);
+                const lineWidth = 4 * (1 - t) + 1;
+                ctx.strokeStyle = ring.color;
+                ctx.globalAlpha = alpha;
+                ctx.lineWidth = lineWidth;
+                ctx.beginPath();
+                ctx.arc(sx, sy, currentRadius, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        function renderKillPopups() {
+            const now = Date.now();
+            const vw = canvas.width / currentZoom;
+            const vh = canvas.height / currentZoom;
+            for (let i = 0; i < killPopups.length; i++) {
+                const popup = killPopups[i];
+                const elapsed = now - popup.time;
+                const t = elapsed / popup.duration;
+                if (t >= 1) continue;
+
+                const sx = popup.x - state.camera.x;
+                const sy = popup.y - state.camera.y;
+                if (sx < -100 || sx > vw + 100 || sy < -100 || sy > vh + 100) continue;
+
+                const rise = elapsed * 0.03;
+                const alpha = t < 0.67 ? 1.0 : 1.0 - ((t - 0.67) / 0.33);
+
+                ctx.globalAlpha = alpha;
+                ctx.font = 'bold 18px Segoe UI';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#000';
+                ctx.fillText(popup.text, sx + 1, sy - rise + 1);
+                ctx.fillStyle = '#ffdd44';
+                ctx.fillText(popup.text, sx, sy - rise);
+            }
+            ctx.globalAlpha = 1;
+        }
+
+        // DOM Elements
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const minimapCanvas = document.getElementById('minimap');
+        const minimapCtx = minimapCanvas.getContext('2d');
+        const startScreen = document.getElementById('start-screen');
+        const deathScreen = document.getElementById('death-screen');
+        const hud = document.getElementById('hud');
+        const leaderboard = document.getElementById('leaderboard');
+        const minimap = document.getElementById('minimap');
+
+        const nameInput = document.getElementById('name-input');
+
+        const playBtn = document.getElementById('play-btn');
+        const respawnBtn = document.getElementById('respawn-btn');
+        const scoreDisplay = document.getElementById('score-display').querySelector('span');
+        const leaderboardList = document.getElementById('leaderboard-list');
+        const finalScore = document.getElementById('final-score');
+        const boostBtn = document.getElementById('boost-btn');
+        const shootBtn = document.getElementById('shoot-btn');
+        const criticalMassHud = document.getElementById('critical-mass-hud');
+        const powerupHud = document.getElementById('powerup-hud');
+        const disasterHud = document.getElementById('disaster-hud');
+
+        // WebSocket
+        let ws = null;
+        let mouseX = 0;
+        let mouseY = 0;
+        let isTouchDevice = false;
+        let isMouseDown = false;
+        let isShootBtnHeld = false;
+        function isMobile() { return isTouchDevice || window.innerWidth <= 768; }
+
+        // Relative touch control
+        let touchOrigin = null;  // {x, y} - where finger first touched
+        let touchCurrent = null; // {x, y} - where finger is now
+        const TOUCH_SENSITIVITY = 3; // Multiplier for how far the target projects
+        const PROJECTILE_MIN_RADIUS = 25; // Must be this big to shoot
+
+        // Dynamic zoom - zooms out on mobile as player grows
+        const ZOOM_MIN = 0.55;       // Max zoom-out
+        const ZOOM_MAX = 1.0;        // Default (no zoom)
+        const ZOOM_RADIUS_START = 30; // Start zooming out above this radius
+        const ZOOM_RADIUS_END = 120;  // Full zoom-out at this radius
+        let currentZoom = 1.0;
+        let targetZoom = 1.0;
+
+        function getZoomForRadius(radius) {
+            if (radius <= ZOOM_RADIUS_START) return ZOOM_MAX;
+            if (radius >= ZOOM_RADIUS_END) return ZOOM_MIN;
+            const t = (radius - ZOOM_RADIUS_START) / (ZOOM_RADIUS_END - ZOOM_RADIUS_START);
+            return ZOOM_MAX - t * (ZOOM_MAX - ZOOM_MIN);
+        }
+
+        // Resize canvas
+        function resizeCanvas() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            // Smaller minimap on mobile
+            const minimapSize = window.innerWidth <= 768 ? 100 : 150;
+            minimapCanvas.width = minimapSize;
+            minimapCanvas.height = minimapSize;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Connect to server
+        function connect(onConnected) {
+            // Use secure WebSocket (wss://) for HTTPS, regular (ws://) for HTTP
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            // Connect through nginx proxy at /ws path
+            const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
+
+            ws = new WebSocket(wsUrl);
+
+            ws.onopen = () => {
+                state.connected = true;
+
+                playBtn.disabled = false;
+                playBtn.textContent = 'PLAY';
+                if (onConnected) onConnected();
+            };
+
+            ws.onclose = () => {
+                state.connected = false;
+
+                playBtn.disabled = false;
+                playBtn.textContent = 'PLAY';
+            };
+
+            ws.onerror = () => {
+                state.connected = false;
+
+                playBtn.disabled = false;
+                playBtn.textContent = 'PLAY';
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                handleMessage(data);
+            };
+        }
+
+        // Handle server messages
+        function handleMessage(data) {
+            switch (data.type) {
+                case 'welcome':
+                    state.you = data.player;
+                    state.walls = data.walls || [];
+                    state.world = data.world || state.world;
+                    state.playing = true;
+                    showGame();
+                    break;
+
+                case 'state':
+                    handleStateUpdate(data);
+                    break;
+            }
+        }
+
+        function handleStateUpdate(data) {
+            // VFX: detect events from state diffs (BEFORE state overwrite)
+            if (state.you && state.you.alive && data.you && data.you.alive) {
+                const scoreDelta = data.you.score - state.you.score;
+                if (scoreDelta > 30) {
+                    triggerScreenShake(Math.min(12, 4 + scoreDelta / 20));
+
+                    let victimColor = '#ffffff';
+                    if (state.players && data.players) {
+                        const newAlive = new Set(data.players.filter(p => p.alive).map(p => p.id));
+                        const victim = state.players.find(p => p.alive && p.id !== state.you.id && !newAlive.has(p.id));
+                        if (victim) victimColor = victim.color;
+                    }
+                    spawnKillEffects(data.you.x, data.you.y, scoreDelta, victimColor, data.you.radius);
+                }
+                const radiusDelta = state.you.radius - data.you.radius;
+                if (radiusDelta > 2) {
+                    triggerScreenShake(Math.min(8, 2 + radiusDelta / 5));
+                }
+            }
+            detectOrbConsumption(data);
+
+            // Detect power-up pickup (before state overwrite so we compare old vs new)
+            if (data.you.active_powerup && (!state.you || !state.you.active_powerup || state.you.active_powerup !== data.you.active_powerup)) {
+                const names = { shield: 'SHIELD', rapid_fire: 'RAPID FIRE', magnet: 'MAGNET', phantom: 'PHANTOM' };
+                state.powerupPopup = { text: names[data.you.active_powerup] || data.you.active_powerup.toUpperCase(), time: Date.now() };
+            }
+
+            state.you = data.you;
+            state.players = data.players;
+            state.energyOrbs = data.energy_orbs;
+            state.spikeOrbs = data.spike_orbs || [];
+            state.goldenOrbs = data.golden_orbs || [];
+            state.projectiles = data.projectiles || [];
+            state.powerupOrbs = data.powerup_orbs || [];
+            state.killFeed = data.kill_feed || [];
+            state.leaderboard = data.leaderboard;
+            state.disaster = data.disaster || { active: null, warning: null };
+
+            if (!state.you.alive && state.playing) {
+                showDeathScreen();
+            } else if (state.you.alive && deathScreen.style.display === 'flex') {
+                hideDeathScreen();
+            }
+        }
+
+        // Show/hide screens
+        function showGame() {
+            startScreen.style.display = 'none';
+            hud.style.display = 'block';
+            leaderboard.style.display = 'block';
+            minimap.style.display = 'block';
+
+        }
+
+        function showDeathScreen() {
+            finalScore.textContent = state.lastScore;
+            deathScreen.style.display = 'flex';
+            boostBtn.style.display = 'none';
+            shootBtn.style.display = 'none';
+            criticalMassHud.style.display = 'none';
+            powerupHud.style.display = 'none';
+        }
+
+        function hideDeathScreen() {
+            deathScreen.style.display = 'none';
+        }
+
+        // Join game
+        function joinGame() {
+            if (!state.connected) {
+                // Connect first, then join when connected
+                playBtn.disabled = true;
+                playBtn.textContent = 'Connecting...';
+                connect(() => {
+                    const name = nameInput.value.trim() || 'Anonymous';
+                    ws.send(JSON.stringify({ type: 'join', name }));
+                });
+            } else {
+                const name = nameInput.value.trim() || 'Anonymous';
+                ws.send(JSON.stringify({ type: 'join', name }));
+            }
+        }
+
+        // Respawn
+        function respawn() {
+            ws.send(JSON.stringify({ type: 'respawn' }));
+            hideDeathScreen();
+        }
+
+        // Send movement
+        function sendMovement() {
+            if (!state.playing || !state.you || !state.you.alive) return;
+
+            let worldX, worldY;
+
+            // Check if using touch controls
+            if (isTouchDevice && touchOrigin && touchCurrent) {
+                // Relative touch: calculate direction from origin to current touch
+                const deltaX = touchCurrent.x - touchOrigin.x;
+                const deltaY = touchCurrent.y - touchOrigin.y;
+
+                // Project from player position in that direction
+                // Multiply by sensitivity for responsive feel
+                worldX = state.you.x + (deltaX * TOUCH_SENSITIVITY);
+                worldY = state.you.y + (deltaY * TOUCH_SENSITIVITY);
+            } else if (isTouchDevice && !touchOrigin) {
+                // Touch released - target current position (stop moving)
+                worldX = state.you.x;
+                worldY = state.you.y;
+            } else {
+                // Mouse/desktop: convert screen coords to world coords (zoom-adjusted)
+                worldX = mouseX / currentZoom + state.camera.x;
+                worldY = mouseY / currentZoom + state.camera.y;
+            }
+
+            ws.send(JSON.stringify({
+                type: 'move',
+                x: worldX,
+                y: worldY
+            }));
+        }
+
+        // Event listeners
+        playBtn.addEventListener('click', joinGame);
+        nameInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') joinGame();
+        });
+        respawnBtn.addEventListener('click', respawn);
+
+        // Mouse events
+        canvas.addEventListener('mousemove', (e) => {
+            mouseX = e.clientX;
+            mouseY = e.clientY;
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            if (e.button === 0) isMouseDown = true;
+        });
+        canvas.addEventListener('mouseup', (e) => {
+            if (e.button === 0) isMouseDown = false;
+        });
+
+        // Double-tap detection for boost
+        let lastTapTime = 0;
+        const DOUBLE_TAP_DELAY = 300; // ms
+
+        // Touch events for mobile support - RELATIVE TOUCH CONTROLS
+        canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            isTouchDevice = true;
+            const touch = e.touches[0];
+
+            // Set touch origin - this is our "center point"
+            touchOrigin = { x: touch.clientX, y: touch.clientY };
+            touchCurrent = { x: touch.clientX, y: touch.clientY };
+
+            // Double-tap detection for boost
+            const currentTime = Date.now();
+            if (currentTime - lastTapTime < DOUBLE_TAP_DELAY) {
+                sendBoost();
+                lastTapTime = 0; // Reset to prevent triple-tap
+            } else {
+                lastTapTime = currentTime;
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            touchCurrent = { x: touch.clientX, y: touch.clientY };
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            // Clear touch origin - stop moving
+            touchOrigin = null;
+            touchCurrent = null;
+        }, { passive: false });
+
+        // Keyboard events for boost (desktop)
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && state.playing && state.you && state.you.alive) {
+                e.preventDefault();
+                sendBoost();
+            }
+        });
+
+        // Mobile boost button
+        boostBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            boostBtn.classList.add('pressed');
+            sendBoost();
+        }, { passive: false });
+
+        boostBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            boostBtn.classList.remove('pressed');
+        }, { passive: false });
+
+        // Also support click for testing on desktop
+        boostBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            sendBoost();
+        });
+
+        // Click to shoot (desktop)
+        canvas.addEventListener('click', (e) => {
+            if (!state.playing || !state.you || !state.you.alive) return;
+            if (isTouchDevice) return; // mobile uses button
+            const worldX = e.clientX / currentZoom + state.camera.x;
+            const worldY = e.clientY / currentZoom + state.camera.y;
+            sendShoot(worldX, worldY);
+        });
+
+        // Mobile shoot button
+        shootBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            shootBtn.classList.add('pressed');
+            isShootBtnHeld = true;
+            if (state.you && state.you.alive) {
+                // Shoot toward current movement target
+                sendShoot(state.you.x + (touchCurrent ? (touchCurrent.x - (touchOrigin ? touchOrigin.x : 0)) * TOUCH_SENSITIVITY : 0),
+                          state.you.y + (touchCurrent ? (touchCurrent.y - (touchOrigin ? touchOrigin.y : 0)) * TOUCH_SENSITIVITY : 0));
+            }
+        }, { passive: false });
+
+        shootBtn.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            shootBtn.classList.remove('pressed');
+            isShootBtnHeld = false;
+        }, { passive: false });
+
+        shootBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            if (state.you && state.you.alive) {
+                const worldX = mouseX / currentZoom + state.camera.x;
+                const worldY = mouseY / currentZoom + state.camera.y;
+                sendShoot(worldX, worldY);
+            }
+        });
+
+        // Send shoot command
+        function sendShoot(targetX, targetY) {
+            if (!state.connected || !state.you) return;
+            if (!state.you.shoot_ready && state.you.active_powerup !== 'rapid_fire') return;
+            ws.send(JSON.stringify({ type: 'shoot', x: targetX, y: targetY }));
+        }
+
+        // Send boost command
+        function sendBoost() {
+            if (!state.connected || !state.you || !state.you.boost_ready) return;
+            ws.send(JSON.stringify({ type: 'boost' }));
+        }
+
+        // Update boost button state
+        function updateBoostButton() {
+            if (!state.you || !state.you.alive) {
+                boostBtn.style.display = 'none';
+                return;
+            }
+
+            // Only show on touch devices or narrow screens
+            if (isMobile()) {
+                boostBtn.style.display = 'flex';
+            }
+
+            if (state.you.is_boosting) {
+                boostBtn.classList.add('boosting');
+                boostBtn.classList.remove('cooldown');
+                boostBtn.textContent = 'BOOST!';
+            } else if (state.you.boost_ready) {
+                boostBtn.classList.remove('boosting', 'cooldown');
+                boostBtn.textContent = 'BOOST';
+            } else {
+                boostBtn.classList.remove('boosting');
+                boostBtn.classList.add('cooldown');
+                boostBtn.textContent = 'WAIT';
+            }
+        }
+
+        // Update shoot button state (mobile)
+        function updateShootButton() {
+            if (!state.you || !state.you.alive) {
+                shootBtn.style.display = 'none';
+                return;
+            }
+            if (isMobile()) {
+                shootBtn.style.display = 'flex';
+            }
+            if (state.you.radius < PROJECTILE_MIN_RADIUS) {
+                shootBtn.classList.add('cooldown');
+                shootBtn.textContent = 'GROW';
+            } else if (state.you.shoot_ready) {
+                shootBtn.classList.remove('cooldown');
+                shootBtn.textContent = 'SHOOT';
+            } else {
+                shootBtn.classList.add('cooldown');
+                shootBtn.textContent = 'WAIT';
+            }
+        }
+
+        // Update critical mass HUD
+        function updateCriticalMassHud() {
+            if (!state.you || !state.you.alive || !state.you.critical_mass_active) {
+                criticalMassHud.style.display = 'none';
+                return;
+            }
+            const remaining = state.you.critical_mass_remaining;
+            criticalMassHud.style.display = 'block';
+            criticalMassHud.textContent = `CRITICAL MASS: ${Math.ceil(remaining)}s`;
+
+            if (remaining > 20) {
+                criticalMassHud.style.background = 'rgba(0, 180, 0, 0.3)';
+                criticalMassHud.style.borderColor = '#00ff88';
+                criticalMassHud.style.color = '#00ff88';
+            } else if (remaining > 10) {
+                criticalMassHud.style.background = 'rgba(200, 180, 0, 0.3)';
+                criticalMassHud.style.borderColor = '#ffcc00';
+                criticalMassHud.style.color = '#ffcc00';
+            } else {
+                criticalMassHud.style.background = 'rgba(200, 0, 0, 0.4)';
+                criticalMassHud.style.borderColor = '#ff4444';
+                criticalMassHud.style.color = '#ff4444';
+            }
+        }
+
+        // Power-up HUD colors
+        const POWERUP_COLORS = {
+            shield: { bg: 'rgba(200, 180, 0, 0.3)', border: '#ffd700', text: '#ffd700', name: 'SHIELD' },
+            rapid_fire: { bg: 'rgba(200, 80, 0, 0.3)', border: '#ff6632', text: '#ff6632', name: 'RAPID FIRE' },
+            magnet: { bg: 'rgba(0, 150, 50, 0.3)', border: '#00ff88', text: '#00ff88', name: 'MAGNET' },
+            phantom: { bg: 'rgba(0, 150, 200, 0.3)', border: '#00d4ff', text: '#00d4ff', name: 'PHANTOM' }
+        };
+
+        function updatePowerUpHud() {
+            if (!state.you || !state.you.alive || !state.you.active_powerup) {
+                powerupHud.style.display = 'none';
+                return;
+            }
+            const pu = POWERUP_COLORS[state.you.active_powerup];
+            if (!pu) { powerupHud.style.display = 'none'; return; }
+
+            powerupHud.style.display = 'block';
+            powerupHud.style.background = pu.bg;
+            powerupHud.style.borderColor = pu.border;
+            powerupHud.style.color = pu.text;
+            powerupHud.textContent = `${pu.name}: ${Math.ceil(state.you.powerup_remaining)}s`;
+        }
+
+        // Disaster names for display
+        const DISASTER_NAMES = {
+            black_hole: 'BLACK HOLE',
+            meteor_shower: 'METEOR SHOWER',
+            fog_of_war: 'FOG OF WAR',
+            feeding_frenzy: 'FEEDING FRENZY',
+            supernova: 'SUPERNOVA',
+            earthquake: 'EARTHQUAKE'
+        };
+
+        function updateDisasterHud() {
+            const d = state.disaster;
+            if (!d) { disasterHud.style.display = 'none'; return; }
+
+            if (d.warning) {
+                disasterHud.style.display = 'block';
+                disasterHud.className = 'warning';
+                const name = DISASTER_NAMES[d.warning] || d.warning;
+                disasterHud.textContent = `WARNING: ${name} INCOMING (${Math.ceil(d.warning_remaining)}s)`;
+            } else if (d.active) {
+                disasterHud.style.display = 'block';
+                const name = DISASTER_NAMES[d.active] || d.active;
+                let extraClass = '';
+                if (d.active === 'fog_of_war') extraClass = ' fog';
+                else if (d.active === 'feeding_frenzy') extraClass = ' frenzy';
+                disasterHud.className = 'active' + extraClass;
+                const remaining = d.remaining != null ? ` (${Math.ceil(d.remaining)}s)` : '';
+                disasterHud.textContent = `${name}${remaining}`;
+            } else {
+                disasterHud.style.display = 'none';
+            }
+        }
+
+        // ── Disaster rendering functions ──
+
+        function drawBlackHole(bh, progress) {
+            const screenX = bh.x - state.camera.x;
+            const screenY = bh.y - state.camera.y;
+
+            // Skip if way off screen
+            if (isOffScreen(screenX, screenY, 600)) return;
+
+            const r = bh.radius;
+            const t = Date.now() / 1000;
+
+            // Accretion disk (outer swirl)
+            const pullRange = 500 * progress;
+            const diskGrad = ctx.createRadialGradient(screenX, screenY, r, screenX, screenY, pullRange);
+            diskGrad.addColorStop(0, 'rgba(80, 0, 120, 0.4)');
+            diskGrad.addColorStop(0.3, 'rgba(40, 0, 80, 0.2)');
+            diskGrad.addColorStop(0.6, 'rgba(20, 0, 50, 0.1)');
+            diskGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = diskGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, pullRange, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Swirling rings
+            for (let i = 0; i < 3; i++) {
+                const ringR = r * (1.5 + i * 0.8);
+                const alpha = 0.3 - i * 0.08;
+                ctx.strokeStyle = `rgba(150, 50, 255, ${alpha})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.ellipse(screenX, screenY, ringR, ringR * 0.4,
+                    t * (1 + i * 0.3) + i, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Event horizon (black center)
+            const coreGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, r);
+            coreGrad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+            coreGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.95)');
+            coreGrad.addColorStop(1, 'rgba(30, 0, 60, 0.8)');
+            ctx.fillStyle = coreGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bright accretion ring at edge
+            ctx.strokeStyle = `rgba(200, 100, 255, ${0.5 + Math.sin(t * 5) * 0.2})`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r + 2, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Gravitational lensing - distortion dots
+            for (let i = 0; i < 8; i++) {
+                const angle = t * 2 + i * Math.PI / 4;
+                const dist = r + 8 + Math.sin(t * 3 + i) * 5;
+                const dx = Math.cos(angle) * dist;
+                const dy = Math.sin(angle) * dist;
+                ctx.fillStyle = `rgba(200, 150, 255, ${0.6 + Math.sin(t * 4 + i) * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(screenX + dx, screenY + dy, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawMeteorImpact(meteor) {
+            const screenX = meteor.x - state.camera.x;
+            const screenY = meteor.y - state.camera.y;
+
+            if (isOffScreen(screenX, screenY, 100)) return;
+
+            const r = meteor.radius;
+
+            // Impact flash
+            const flashGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, r * 2);
+            flashGrad.addColorStop(0, 'rgba(255, 200, 50, 0.8)');
+            flashGrad.addColorStop(0.3, 'rgba(255, 100, 0, 0.5)');
+            flashGrad.addColorStop(0.6, 'rgba(255, 50, 0, 0.2)');
+            flashGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = flashGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Crater ring
+            ctx.strokeStyle = 'rgba(255, 150, 50, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Center bright spot
+            ctx.fillStyle = 'rgba(255, 255, 200, 0.9)';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, 5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawFogOfWar(fogRadius) {
+            if (!state.you || !state.you.alive) return;
+
+            const screenX = state.you.x - state.camera.x;
+            const screenY = state.you.y - state.camera.y;
+            const vw = canvas.width / currentZoom;
+            const vh = canvas.height / currentZoom;
+
+            ctx.save();
+
+            // Dark overlay with circular cutout using evenodd fill rule
+            // This leaves the game world visible inside the circle
+            ctx.fillStyle = 'rgba(5, 5, 20, 0.93)';
+            ctx.beginPath();
+            ctx.rect(0, 0, vw, vh);
+            ctx.arc(screenX, screenY, fogRadius, 0, Math.PI * 2, true);
+            ctx.fill('evenodd');
+
+            // Soft gradient edge around the visibility circle for a smooth transition
+            const edgeGrad = ctx.createRadialGradient(
+                screenX, screenY, fogRadius * 0.65,
+                screenX, screenY, fogRadius
+            );
+            edgeGrad.addColorStop(0, 'rgba(5, 5, 20, 0)');
+            edgeGrad.addColorStop(1, 'rgba(5, 5, 20, 0.93)');
+            ctx.fillStyle = edgeGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, fogRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+
+            // Fog particles drifting at edge of visibility
+            const t = Date.now() / 1000;
+            for (let i = 0; i < 12; i++) {
+                const angle = t * 0.3 + i * Math.PI / 6;
+                const dist = fogRadius - 20 + Math.sin(t + i) * 30;
+                const px = screenX + Math.cos(angle) * dist;
+                const py = screenY + Math.sin(angle) * dist;
+                const alpha = 0.15 + Math.sin(t * 2 + i) * 0.1;
+                ctx.fillStyle = `rgba(100, 100, 150, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(px, py, 15 + Math.sin(t + i * 2) * 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawSupernova(nova) {
+            const screenX = nova.x - state.camera.x;
+            const screenY = nova.y - state.camera.y;
+            const elapsed = nova.time; // seconds since first pulse
+            const pulseCount = nova.pulse_count || 5;
+            const pulseInterval = nova.pulse_interval || 1.5;
+            const pulseExpand = nova.pulse_expand || 1.2;
+
+            // Bright flash on each new pulse
+            for (let p = 0; p < pulseCount; p++) {
+                const pulseStart = p * pulseInterval;
+                const pulseElapsed = elapsed - pulseStart;
+                if (pulseElapsed >= 0 && pulseElapsed < 0.3) {
+                    const flashAlpha = (1 - pulseElapsed / 0.3) * (0.25 - p * 0.03);
+                    ctx.fillStyle = `rgba(255, 255, 255, ${Math.max(0, flashAlpha)})`;
+                    ctx.fillRect(0, 0, canvas.width / currentZoom, canvas.height / currentZoom);
+                    break; // only one flash at a time
+                }
+            }
+
+            // Draw each pulse ring
+            for (let p = 0; p < pulseCount; p++) {
+                const pulseStart = p * pulseInterval;
+                const pulseElapsed = elapsed - pulseStart;
+                if (pulseElapsed < 0) continue; // not started yet
+                const fadeTime = pulseExpand + 0.5;
+                if (pulseElapsed > fadeTime) continue; // fully faded
+
+                const expandT = Math.min(1, pulseElapsed / pulseExpand);
+                const waveRadius = nova.radius * expandT;
+                const alpha = Math.max(0, 1 - pulseElapsed / fadeTime);
+
+                // Color shifts slightly per pulse (orange → red → pink)
+                const r = 255;
+                const g = Math.max(80, 200 - p * 30);
+                const b = 50 + p * 25;
+
+                // Expanding ring
+                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.8})`;
+                ctx.lineWidth = Math.max(1, 7 - pulseElapsed * 3);
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, waveRadius, 0, Math.PI * 2);
+                ctx.stroke();
+
+                // Inner glow (only while expanding)
+                if (pulseElapsed < pulseExpand) {
+                    const glowR = Math.max(1, waveRadius * 0.7);
+                    const glowGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, glowR);
+                    glowGrad.addColorStop(0, `rgba(255, 255, 200, ${alpha * 0.35})`);
+                    glowGrad.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${alpha * 0.2})`);
+                    glowGrad.addColorStop(1, 'transparent');
+                    ctx.fillStyle = glowGrad;
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, glowR, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+
+                // Debris particles per ring
+                for (let i = 0; i < 12; i++) {
+                    const angle = i * Math.PI / 6 + pulseElapsed * 0.8 + p;
+                    const dist = waveRadius * (0.4 + (i % 3) * 0.2);
+                    const px = screenX + Math.cos(angle) * dist;
+                    const py = screenY + Math.sin(angle) * dist;
+                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.5})`;
+                    ctx.beginPath();
+                    ctx.arc(px, py, Math.max(0.5, 2.5 - pulseElapsed * 0.8), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Pulsing core glow while active
+            const coreAlpha = Math.max(0, 0.4 * Math.sin(elapsed * 4) * (1 - elapsed / (pulseCount * pulseInterval + pulseExpand)));
+            if (coreAlpha > 0) {
+                const coreGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 40);
+                coreGrad.addColorStop(0, `rgba(255, 255, 255, ${coreAlpha})`);
+                coreGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = coreGrad;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 40, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawEarthquakeShake(progress) {
+            // Screen shake effect — applied as a canvas transform
+            if (progress > 0 && progress < 1) {
+                const intensity = Math.sin(progress * Math.PI) * 8; // strongest in middle
+                const shakeX = (Math.random() - 0.5) * intensity;
+                const shakeY = (Math.random() - 0.5) * intensity;
+                ctx.translate(shakeX, shakeY);
+            }
+        }
+
+        function drawFrenzyOverlay(progress) {
+            // Subtle green pulsing border to indicate frenzy
+            const pulse = Math.sin(Date.now() / 200) * 0.15 + 0.2;
+            const thickness = 4;
+
+            const w = canvas.width / currentZoom;
+            const h = canvas.height / currentZoom;
+            ctx.fillStyle = `rgba(0, 255, 100, ${pulse})`;
+            // Top
+            ctx.fillRect(0, 0, w, thickness);
+            // Bottom
+            ctx.fillRect(0, h - thickness, w, thickness);
+            // Left
+            ctx.fillRect(0, 0, thickness, h);
+            // Right
+            ctx.fillRect(w - thickness, 0, thickness, h);
+        }
+
+        // Game loop
+        function gameLoop() {
+            update();
+            render();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function update() {
+            if (!state.playing || !state.you) return;
+
+            // Update zoom (smooth lerp toward target)
+            targetZoom = getZoomForRadius(state.you.radius || 20);
+            currentZoom += (targetZoom - currentZoom) * 0.08;
+
+            // Update camera to follow player (zoom-adjusted viewport)
+            const viewW = canvas.width / currentZoom;
+            const viewH = canvas.height / currentZoom;
+            state.camera.x = state.you.x - viewW / 2;
+            state.camera.y = state.you.y - viewH / 2;
+
+            // Update score display
+            if (state.you.alive) {
+                state.lastScore = state.you.score;
+                scoreDisplay.textContent = state.you.score;
+            }
+
+            // Update leaderboard
+            updateLeaderboard();
+
+            // Update mobile boost button
+            updateBoostButton();
+
+            // Update mobile shoot button
+            updateShootButton();
+
+            // Update critical mass warning
+            updateCriticalMassHud();
+
+            // Update power-up HUD
+            updatePowerUpHud();
+
+            // Update disaster HUD
+            updateDisasterHud();
+
+            // Rapid fire auto-shoot while holding mouse/button
+            if (state.you.active_powerup === 'rapid_fire') {
+                if (isMouseDown && !isTouchDevice) {
+                    const worldX = mouseX / currentZoom + state.camera.x;
+                    const worldY = mouseY / currentZoom + state.camera.y;
+                    sendShoot(worldX, worldY);
+                } else if (isShootBtnHeld && state.you.alive) {
+                    sendShoot(state.you.x + (touchCurrent ? (touchCurrent.x - (touchOrigin ? touchOrigin.x : 0)) * TOUCH_SENSITIVITY : 0),
+                              state.you.y + (touchCurrent ? (touchCurrent.y - (touchOrigin ? touchOrigin.y : 0)) * TOUCH_SENSITIVITY : 0));
+                }
+            }
+
+            // Send movement at 30fps
+            if (Date.now() % 33 < 17) {
+                sendMovement();
+            }
+
+            // VFX updates
+            updateParticles();
+            updateScreenShake();
+            updateKillEffects();
+        }
+
+        function updateLeaderboard() {
+            leaderboardList.innerHTML = '';
+            state.leaderboard.forEach((entry, index) => {
+                const li = document.createElement('li');
+                const nameSpan = document.createElement('span');
+                nameSpan.textContent = `${index + 1}. ${entry.name}`;
+                const scoreSpan = document.createElement('span');
+                scoreSpan.textContent = entry.score;
+                li.appendChild(nameSpan);
+                li.appendChild(scoreSpan);
+                if (state.you && entry.name === state.you.name) {
+                    li.className = 'you';
+                }
+                leaderboardList.appendChild(li);
+            });
+        }
+
+        function renderDisasterEffects() {
+            if (!state.disaster) return;
+            if (state.disaster.active === 'black_hole' && state.disaster.black_hole) {
+                drawBlackHole(state.disaster.black_hole, state.disaster.progress || 0);
+            }
+            if (state.disaster.active === 'meteor_shower' && state.disaster.meteors) {
+                state.disaster.meteors.forEach(m => drawMeteorImpact(m));
+            }
+            if (state.disaster.active === 'supernova' && state.disaster.supernova) {
+                drawSupernova(state.disaster.supernova);
+            }
+        }
+
+        function render() {
+            // Clear canvas
+            ctx.fillStyle = '#0a0a1a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            if (!state.playing) return;
+
+            // Apply zoom transform
+            ctx.save();
+            ctx.scale(currentZoom, currentZoom);
+
+            // VFX screen shake (kills/damage)
+            if (vfxShakeIntensity > 0.1) {
+                ctx.translate(vfxShakeX, vfxShakeY);
+            }
+
+            // Earthquake screen shake (save/restore wraps everything)
+            const hasEarthquake = state.disaster && state.disaster.active === 'earthquake';
+            if (hasEarthquake) {
+                ctx.save();
+                drawEarthquakeShake(state.disaster.earthquake_progress || 0);
+            }
+
+            // Draw grid
+            drawGrid();
+
+            // Draw world boundary
+            drawBoundary();
+
+            // Draw walls
+            state.walls.forEach(wall => drawWall(wall));
+
+            // Draw energy orbs
+            state.energyOrbs.forEach(orb => drawEnergyOrb(orb));
+
+            // Draw golden orbs (rare!)
+            state.goldenOrbs.forEach(orb => drawGoldenOrb(orb));
+
+            // Draw power-up orbs (mystery!)
+            state.powerupOrbs.forEach(orb => drawPowerUpOrb(orb));
+
+            // Draw spike orbs (dangerous!)
+            state.spikeOrbs.forEach(orb => drawSpikeOrb(orb));
+
+            // VFX: Orb consumption particles
+            renderParticles();
+
+            // Draw projectiles
+            state.projectiles.forEach(proj => drawProjectile(proj));
+
+            renderDisasterEffects();
+
+            // Draw players (sorted by size so larger ones appear on top)
+            const sortedPlayers = [...state.players].sort((a, b) => a.radius - b.radius);
+            sortedPlayers.forEach(player => {
+                if (player.alive) {
+                    drawPlayer(player, player.id === state.you.id);
+                }
+            });
+
+            // VFX: Kill effects (above players)
+            renderKillRings();
+            renderKillPopups();
+
+            // Draw fog of war (over everything except HUD)
+            if (state.disaster && state.disaster.active === 'fog_of_war') {
+                drawFogOfWar(state.disaster.fog_radius || 300);
+            }
+
+            // Feeding frenzy border overlay
+            if (state.disaster && state.disaster.active === 'feeding_frenzy') {
+                drawFrenzyOverlay(state.disaster.progress || 0);
+            }
+
+            // Restore earthquake transform before HUD
+            if (hasEarthquake) {
+                ctx.restore();
+            }
+
+            // Restore zoom transform before HUD (HUD is screen-space)
+            ctx.restore();
+
+            // Draw HUD elements
+            drawKillFeed();
+            drawBoostIndicator();
+            drawTouchIndicator();
+            drawPowerUpPopup();
+
+            // Draw minimap (hide during fog of war)
+            if (state.disaster && state.disaster.active === 'fog_of_war') {
+                // Dark minimap during fog
+                minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+                minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
+                minimapCtx.fillStyle = 'rgba(100, 100, 150, 0.5)';
+                minimapCtx.font = 'bold 12px Segoe UI';
+                minimapCtx.textAlign = 'center';
+                minimapCtx.textBaseline = 'middle';
+                minimapCtx.fillText('FOG', minimapCanvas.width / 2, minimapCanvas.height / 2);
+            } else {
+                drawMinimap();
+            }
+        }
+
+        function drawTouchIndicator() {
+            // Only show when touch is active
+            if (!touchOrigin || !touchCurrent) return;
+
+            const deltaX = touchCurrent.x - touchOrigin.x;
+            const deltaY = touchCurrent.y - touchOrigin.y;
+            const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+            // Outer ring (touch origin)
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(touchOrigin.x, touchOrigin.y, 50, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Direction line
+            if (distance > 10) {
+                ctx.strokeStyle = 'rgba(0, 255, 255, 0.5)';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(touchOrigin.x, touchOrigin.y);
+                ctx.lineTo(touchCurrent.x, touchCurrent.y);
+                ctx.stroke();
+
+                // Arrow head
+                const angle = Math.atan2(deltaY, deltaX);
+                const arrowSize = 12;
+                ctx.fillStyle = 'rgba(0, 255, 255, 0.7)';
+                ctx.beginPath();
+                ctx.moveTo(touchCurrent.x, touchCurrent.y);
+                ctx.lineTo(
+                    touchCurrent.x - arrowSize * Math.cos(angle - 0.4),
+                    touchCurrent.y - arrowSize * Math.sin(angle - 0.4)
+                );
+                ctx.lineTo(
+                    touchCurrent.x - arrowSize * Math.cos(angle + 0.4),
+                    touchCurrent.y - arrowSize * Math.sin(angle + 0.4)
+                );
+                ctx.closePath();
+                ctx.fill();
+            }
+
+            // Center dot
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(touchOrigin.x, touchOrigin.y, 8, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawGrid() {
+            const gridSize = 50;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.03)';
+            ctx.lineWidth = 1;
+
+            const vw = canvas.width / currentZoom;
+            const vh = canvas.height / currentZoom;
+            const startX = -state.camera.x % gridSize;
+            const startY = -state.camera.y % gridSize;
+
+            for (let x = startX; x < vw; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, vh);
+                ctx.stroke();
+            }
+
+            for (let y = startY; y < vh; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(vw, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawBoundary() {
+            const x = -state.camera.x;
+            const y = -state.camera.y;
+
+            ctx.strokeStyle = 'rgba(255, 0, 100, 0.5)';
+            ctx.lineWidth = 5;
+            ctx.strokeRect(x, y, state.world.width, state.world.height);
+
+            // Danger zone gradient at edges
+            const gradient = ctx.createLinearGradient(x, y, x + 100, y);
+            gradient.addColorStop(0, 'rgba(255, 0, 100, 0.2)');
+            gradient.addColorStop(1, 'transparent');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x, y, 100, state.world.height);
+        }
+
+        function drawEnergyOrb(orb) {
+            const screenX = orb.x - state.camera.x;
+            const screenY = orb.y - state.camera.y;
+
+            // Skip if off screen
+            if (isOffScreen(screenX, screenY, 50)) return;
+
+            // Glow effect
+            const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, orb.radius * 3);
+            glow.addColorStop(0, orb.color + '40');
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius * 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main orb
+            ctx.fillStyle = orb.color;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Highlight
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+            ctx.beginPath();
+            ctx.arc(screenX - orb.radius * 0.3, screenY - orb.radius * 0.3, orb.radius * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawSpikeOrb(orb) {
+            const screenX = orb.x - state.camera.x;
+            const screenY = orb.y - state.camera.y;
+
+            // Skip if off screen
+            if (isOffScreen(screenX, screenY, 50)) return;
+
+            // Menacing glow effect
+            const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, orb.radius * 3);
+            glow.addColorStop(0, 'rgba(255, 0, 50, 0.4)');
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius * 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw spikes
+            const spikeCount = 8;
+            const innerRadius = orb.radius * 0.6;
+            const outerRadius = orb.radius * 1.4;
+
+            ctx.fillStyle = orb.color;
+            ctx.beginPath();
+            for (let i = 0; i < spikeCount * 2; i++) {
+                const angle = (i * Math.PI) / spikeCount;
+                const radius = i % 2 === 0 ? outerRadius : innerRadius;
+                const px = screenX + Math.cos(angle) * radius;
+                const py = screenY + Math.sin(angle) * radius;
+                if (i === 0) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.closePath();
+            ctx.fill();
+
+            // Inner dark core
+            ctx.fillStyle = 'rgba(100, 0, 30, 0.8)';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Warning symbol (skull-ish dot pattern)
+            ctx.fillStyle = '#fff';
+            ctx.beginPath();
+            ctx.arc(screenX - 2, screenY - 1, 2, 0, Math.PI * 2);
+            ctx.arc(screenX + 2, screenY - 1, 2, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawGoldenOrb(orb) {
+            const screenX = orb.x - state.camera.x;
+            const screenY = orb.y - state.camera.y;
+
+            // Skip if off screen
+            if (isOffScreen(screenX, screenY, 50)) return;
+
+            // Golden sparkle glow
+            const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, orb.radius * 4);
+            glow.addColorStop(0, 'rgba(255, 215, 0, 0.6)');
+            glow.addColorStop(0.5, 'rgba(255, 180, 0, 0.3)');
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius * 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main orb with gradient
+            const orbGrad = ctx.createRadialGradient(screenX - 3, screenY - 3, 0, screenX, screenY, orb.radius);
+            orbGrad.addColorStop(0, '#fff7aa');
+            orbGrad.addColorStop(0.5, '#ffd700');
+            orbGrad.addColorStop(1, '#b8860b');
+            ctx.fillStyle = orbGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Sparkle effect
+            ctx.fillStyle = '#fff';
+            const sparkleAngle = Date.now() / 200;
+            for (let i = 0; i < 4; i++) {
+                const angle = sparkleAngle + (i * Math.PI / 2);
+                const sx = screenX + Math.cos(angle) * orb.radius * 0.6;
+                const sy = screenY + Math.sin(angle) * orb.radius * 0.6;
+                ctx.beginPath();
+                ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawPowerUpOrb(orb) {
+            const screenX = orb.x - state.camera.x;
+            const screenY = orb.y - state.camera.y;
+
+            // Skip if off screen
+            if (isOffScreen(screenX, screenY, 60)) return;
+
+            const t = Date.now() / 1000;
+
+            // Rainbow pulsing glow (cycles hue over time)
+            const hue = (t * 60) % 360;
+            const glowColor = `hsla(${hue}, 100%, 70%, 0.5)`;
+            const glowColor2 = `hsla(${(hue + 120) % 360}, 100%, 60%, 0.3)`;
+
+            // Outer glow
+            const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, orb.radius * 4);
+            glow.addColorStop(0, glowColor);
+            glow.addColorStop(0.5, glowColor2);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius * 4, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main orb body - white/prismatic
+            const orbGrad = ctx.createRadialGradient(screenX - 3, screenY - 3, 0, screenX, screenY, orb.radius);
+            orbGrad.addColorStop(0, '#ffffff');
+            orbGrad.addColorStop(0.5, `hsla(${hue}, 80%, 80%, 1)`);
+            orbGrad.addColorStop(1, `hsla(${(hue + 180) % 360}, 70%, 50%, 1)`);
+            ctx.fillStyle = orbGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Pulsing ring
+            const pulse = Math.sin(t * 4) * 0.3 + 0.7;
+            ctx.strokeStyle = `hsla(${hue}, 100%, 80%, ${pulse})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, orb.radius + 4 + Math.sin(t * 3) * 2, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // "?" symbol in center
+            ctx.fillStyle = '#fff';
+            ctx.font = `bold ${orb.radius * 1.2}px Segoe UI`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('?', screenX, screenY + 1);
+        }
+
+        function drawProjectile(proj) {
+            const screenX = proj.x - state.camera.x;
+            const screenY = proj.y - state.camera.y;
+
+            // Skip if off screen
+            if (isOffScreen(screenX, screenY, 30)) return;
+
+            // Glow trail
+            const glow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, proj.radius * 3);
+            glow.addColorStop(0, proj.color + '80');
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, proj.radius * 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main projectile
+            ctx.fillStyle = proj.color;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, proj.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bright core
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, proj.radius * 0.4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawWall(wall) {
+            const screenX = wall.x - state.camera.x;
+            const screenY = wall.y - state.camera.y;
+
+            // Skip if off screen
+            if (screenX + wall.width < 0 || screenX > canvas.width / currentZoom ||
+                screenY + wall.height < 0 || screenY > canvas.height / currentZoom) return;
+
+            // Wall gradient
+            const wallGrad = ctx.createLinearGradient(screenX, screenY, screenX, screenY + wall.height);
+            wallGrad.addColorStop(0, '#445566');
+            wallGrad.addColorStop(0.5, '#334455');
+            wallGrad.addColorStop(1, '#223344');
+            ctx.fillStyle = wallGrad;
+            ctx.fillRect(screenX, screenY, wall.width, wall.height);
+
+            // Border
+            ctx.strokeStyle = '#556677';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(screenX, screenY, wall.width, wall.height);
+
+            // Highlight
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(screenX, screenY + wall.height);
+            ctx.lineTo(screenX, screenY);
+            ctx.lineTo(screenX + wall.width, screenY);
+            ctx.stroke();
+        }
+
+        function drawKillFeed() {
+            if (!state.killFeed || state.killFeed.length === 0) return;
+
+            ctx.font = 'bold 13px Segoe UI';
+            ctx.textAlign = 'left';
+
+            // Position below score (start at y=100 to avoid HUD overlap)
+            const startY = 100;
+
+            state.killFeed.forEach((kill, index) => {
+                const y = startY + index * 22;
+                const alpha = 0.9 - (index * 0.12);
+
+                const isExplosion = kill.victim.includes('(exploded)');
+
+                if (isExplosion) {
+                    // Explosion message
+                    const text = `${kill.killer} EXPLODED!`;
+                    const textWidth = ctx.measureText(text).width;
+                    ctx.fillStyle = `rgba(80, 0, 0, ${alpha * 0.6})`;
+                    ctx.fillRect(15, y - 14, textWidth + 10, 20);
+                    ctx.fillStyle = `rgba(255, 150, 50, ${alpha})`;
+                    ctx.fillText(text, 20, y);
+                } else {
+                    // Normal kill message
+                    const text = `${kill.killer} consumed ${kill.victim}`;
+                    const textWidth = ctx.measureText(text).width;
+                    ctx.fillStyle = `rgba(0, 0, 0, ${alpha * 0.5})`;
+                    ctx.fillRect(15, y - 14, textWidth + 10, 20);
+
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                    ctx.fillText(kill.killer, 20, y);
+
+                    const killerWidth = ctx.measureText(kill.killer).width;
+                    ctx.fillStyle = `rgba(255, 100, 100, ${alpha})`;
+                    ctx.fillText(' consumed ', 20 + killerWidth, y);
+
+                    const consumedWidth = ctx.measureText(kill.killer + ' consumed ').width;
+                    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`;
+                    ctx.fillText(kill.victim, 20 + consumedWidth, y);
+                }
+            });
+        }
+
+        function drawHudBar(x, y, width, height, ready, activeColor, label, activeLabel) {
+            ctx.fillStyle = ready ? activeColor : '#444';
+            ctx.fillRect(x, y, width, height);
+            ctx.strokeStyle = '#666';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(x, y, width, height);
+            ctx.fillStyle = ready ? activeColor : '#666';
+            ctx.font = '12px Segoe UI';
+            ctx.textAlign = 'left';
+            ctx.fillText(ready ? activeLabel : label, x, y - 5);
+        }
+
+        function drawBoostIndicator() {
+            if (!state.you || !state.you.alive || isMobile()) return;
+
+            const x = 20;
+            const y = canvas.height - 60;
+
+            drawHudBar(x, y, 100, 10, state.you.boost_ready, '#00ffff', 'BOOST [SPACE]', 'BOOST [SPACE]');
+
+            if (state.you.is_boosting) {
+                ctx.fillStyle = '#00ffff';
+                ctx.font = 'bold 14px Segoe UI';
+                ctx.fillText('BOOSTING!', x + 110, y + 10);
+            }
+
+            const canShoot = state.you.shoot_ready && state.you.radius >= PROJECTILE_MIN_RADIUS;
+            const shootLabel = state.you.radius < PROJECTILE_MIN_RADIUS ? 'GROW' : 'SHOOT [CLICK]';
+            drawHudBar(x, y - 30, 100, 10, canShoot, '#ff6632', shootLabel, 'SHOOT [CLICK]');
+        }
+
+        function drawPowerUpPopup() {
+            if (!state.powerupPopup || !state.you || !state.you.alive) return;
+            const elapsed = Date.now() - state.powerupPopup.time;
+            if (elapsed > 2000) { state.powerupPopup = null; return; }
+
+            const alpha = Math.max(0, 1 - elapsed / 2000);
+            const rise = elapsed * 0.03;
+            const screenX = state.you.x - state.camera.x;
+            const screenY = state.you.y - state.camera.y - state.you.radius - 40 - rise;
+
+            const pu = POWERUP_COLORS[state.you.active_powerup];
+            const color = pu ? pu.text : '#fff';
+
+            ctx.font = 'bold 22px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = color;
+            ctx.fillText(state.powerupPopup.text + '!', screenX, screenY);
+            ctx.globalAlpha = 1;
+        }
+
+        function drawInvincibilityEffect(screenX, screenY, player) {
+            const pulse = Math.sin(Date.now() / 100) * 0.3 + 0.7;
+            ctx.strokeStyle = `rgba(100, 200, 255, ${pulse})`;
+            ctx.lineWidth = 4;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius + 15, 0, Math.PI * 2);
+            ctx.stroke();
+
+            const shieldGlow = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, player.radius + 20);
+            shieldGlow.addColorStop(0, 'transparent');
+            shieldGlow.addColorStop(0.5, `rgba(100, 200, 255, ${pulse * 0.3})`);
+            shieldGlow.addColorStop(1, 'transparent');
+            ctx.fillStyle = shieldGlow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius + 20, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawCriticalMassEffect(screenX, screenY, player) {
+            const remaining = player.critical_mass_remaining;
+            const pulseSpeed = remaining < 5 ? 50 : remaining < 10 ? 80 : 150;
+            const pulse = Math.sin(Date.now() / pulseSpeed) * 0.4 + 0.6;
+            const urgency = Math.max(0, 1 - remaining / 30);
+
+            let wR, wG, wB;
+            if (remaining > 20) {
+                wR = 0; wG = 255; wB = 100;
+            } else if (remaining > 10) {
+                wR = 255; wG = 200; wB = 0;
+            } else {
+                wR = 255; wG = 50; wB = 50;
+            }
+
+            const breathSpeed = 800 - urgency * 500;
+            const breathT = (Math.sin(Date.now() / breathSpeed) + 1) / 2;
+            const auraMin = player.radius + 15;
+            const auraMax = player.radius + 25 + urgency * 30;
+            const auraRadius = auraMin + breathT * (auraMax - auraMin);
+            const auraAlpha = (0.1 + urgency * 0.3) * pulse;
+
+            const auraGrad = ctx.createRadialGradient(
+                screenX, screenY, player.radius * 0.8,
+                screenX, screenY, auraRadius
+            );
+            auraGrad.addColorStop(0, `rgba(${wR}, ${wG}, ${wB}, ${auraAlpha})`);
+            auraGrad.addColorStop(0.5, `rgba(${wR}, ${wG}, ${wB}, ${auraAlpha * 0.5})`);
+            auraGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = auraGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, auraRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            const warningColor = `rgba(${wR}, ${wG}, ${wB}, ${pulse * (0.6 + urgency * 0.3)})`;
+            ctx.strokeStyle = warningColor;
+            ctx.lineWidth = remaining < 5 ? 5 : 3;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius + 20, 0, Math.PI * 2);
+            ctx.stroke();
+
+            ctx.fillStyle = warningColor;
+            ctx.font = 'bold 16px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.fillText(`${Math.ceil(remaining)}s`, screenX, screenY + player.radius + 25);
+        }
+
+        function drawPowerupEffect(screenX, screenY, player) {
+            if (player.active_powerup === 'shield') {
+                const shieldPulse = Math.sin(Date.now() / 150) * 0.3 + 0.7;
+                ctx.strokeStyle = `rgba(255, 215, 0, ${shieldPulse})`;
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, player.radius + 12, 0, Math.PI * 2);
+                ctx.stroke();
+                const shieldGlow = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, player.radius + 18);
+                shieldGlow.addColorStop(0, 'transparent');
+                shieldGlow.addColorStop(0.5, `rgba(255, 215, 0, ${shieldPulse * 0.25})`);
+                shieldGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = shieldGlow;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, player.radius + 18, 0, Math.PI * 2);
+                ctx.fill();
+            } else if (player.active_powerup === 'rapid_fire') {
+                for (let i = 0; i < 6; i++) {
+                    const angle = (Date.now() / 100 + i * Math.PI / 3) % (Math.PI * 2);
+                    const dist = player.radius + 8 + Math.sin(Date.now() / 80 + i) * 6;
+                    const sx = screenX + Math.cos(angle) * dist;
+                    const sy = screenY + Math.sin(angle) * dist;
+                    ctx.fillStyle = i % 2 === 0 ? 'rgba(255, 100, 50, 0.8)' : 'rgba(255, 200, 50, 0.7)';
+                    ctx.beginPath();
+                    ctx.arc(sx, sy, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            } else if (player.active_powerup === 'magnet') {
+                for (let i = 0; i < 8; i++) {
+                    const angle = (Date.now() / 200 + i * Math.PI / 4) % (Math.PI * 2);
+                    const outerDist = player.radius + 25;
+                    const innerDist = player.radius + 5;
+                    const alpha = (Math.sin(Date.now() / 100 + i) * 0.3 + 0.5);
+                    ctx.strokeStyle = `rgba(0, 255, 136, ${alpha})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(screenX + Math.cos(angle) * outerDist, screenY + Math.sin(angle) * outerDist);
+                    ctx.lineTo(screenX + Math.cos(angle) * innerDist, screenY + Math.sin(angle) * innerDist);
+                    ctx.stroke();
+                }
+            } else if (player.active_powerup === 'phantom') {
+                ctx.globalAlpha = 0.4;
+            }
+        }
+
+        function drawBoostTrail(screenX, screenY, player) {
+            ctx.strokeStyle = 'rgba(0, 255, 255, 0.6)';
+            ctx.lineWidth = 2;
+            for (let i = 0; i < 5; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const dist = player.radius + 10 + Math.random() * 20;
+                ctx.beginPath();
+                ctx.moveTo(screenX + Math.cos(angle) * player.radius, screenY + Math.sin(angle) * player.radius);
+                ctx.lineTo(screenX + Math.cos(angle) * dist, screenY + Math.sin(angle) * dist);
+                ctx.stroke();
+            }
+        }
+
+        function drawPlayer(player, isYou) {
+            const screenX = player.x - state.camera.x;
+            const screenY = player.y - state.camera.y;
+
+            if (isOffScreen(screenX, screenY, player.radius * 2)) return;
+
+            if (player.is_invincible) drawInvincibilityEffect(screenX, screenY, player);
+            if (player.critical_mass_active) drawCriticalMassEffect(screenX, screenY, player);
+            drawPowerupEffect(screenX, screenY, player);
+            if (player.is_boosting) drawBoostTrail(screenX, screenY, player);
+
+            // Outer glow
+            const glowColor = player.is_boosting ? 'rgba(0, 255, 255, 0.4)' : player.color + '60';
+            const glow = ctx.createRadialGradient(screenX, screenY, player.radius * 0.5, screenX, screenY, player.radius * 2);
+            glow.addColorStop(0, glowColor);
+            glow.addColorStop(1, 'transparent');
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius * 2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Main body
+            const bodyGradient = ctx.createRadialGradient(
+                screenX - player.radius * 0.3,
+                screenY - player.radius * 0.3,
+                0,
+                screenX,
+                screenY,
+                player.radius
+            );
+            bodyGradient.addColorStop(0, lightenColor(player.color, 30));
+            bodyGradient.addColorStop(0.7, player.color);
+            bodyGradient.addColorStop(1, darkenColor(player.color, 30));
+
+            ctx.fillStyle = bodyGradient;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, player.radius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Border for "you" indicator
+            if (isYou) {
+                ctx.strokeStyle = player.is_boosting ? '#00ffff' : '#fff';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, player.radius + 5, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Name tag
+            ctx.fillStyle = player.is_invincible ? '#88ddff' : '#fff';
+            ctx.font = 'bold 14px Segoe UI';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(player.name, screenX, screenY - player.radius - 15);
+
+            // Size indicator (mass)
+            ctx.font = '12px Segoe UI';
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+            ctx.fillText(Math.floor(player.radius), screenX, screenY);
+
+            // Reset opacity if phantom
+            if (player.active_powerup === 'phantom') {
+                ctx.globalAlpha = 1;
+            }
+        }
+
+        function drawMinimap() {
+            const mapSize = minimapCanvas.width;
+            const scale = mapSize / state.world.width;
+
+            // Background
+            minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            minimapCtx.fillRect(0, 0, mapSize, mapSize);
+
+            // Power-up orbs (rainbow pulsing)
+            const puHue = (Date.now() / 10) % 360;
+            minimapCtx.fillStyle = `hsl(${puHue}, 100%, 80%)`;
+            state.powerupOrbs.forEach(orb => {
+                minimapCtx.beginPath();
+                minimapCtx.arc(orb.x * scale, orb.y * scale, 3, 0, Math.PI * 2);
+                minimapCtx.fill();
+            });
+
+            // Other players
+            state.players.forEach(player => {
+                if (!player.alive || player.id === state.you.id) return;
+                minimapCtx.fillStyle = player.color;
+                minimapCtx.beginPath();
+                minimapCtx.arc(player.x * scale, player.y * scale, Math.max(2, player.radius * scale), 0, Math.PI * 2);
+                minimapCtx.fill();
+            });
+
+            // You
+            if (state.you && state.you.alive) {
+                minimapCtx.fillStyle = '#fff';
+                minimapCtx.beginPath();
+                minimapCtx.arc(state.you.x * scale, state.you.y * scale, 4, 0, Math.PI * 2);
+                minimapCtx.fill();
+
+                // Viewport rectangle (zoom-adjusted)
+                minimapCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+                minimapCtx.lineWidth = 1;
+                const viewW = canvas.width / currentZoom;
+                const viewH = canvas.height / currentZoom;
+                minimapCtx.strokeRect(
+                    state.camera.x * scale,
+                    state.camera.y * scale,
+                    viewW * scale,
+                    viewH * scale
+                );
+            }
+        }
+
+        // Color utilities
+        function isOffScreen(screenX, screenY, margin) {
+            return screenX < -margin || screenX > canvas.width / currentZoom + margin ||
+                   screenY < -margin || screenY > canvas.height / currentZoom + margin;
+        }
+
+        function lightenColor(color, amount) {
+            const hex = color.replace('#', '');
+            const r = Math.min(255, parseInt(hex.substr(0, 2), 16) + amount);
+            const g = Math.min(255, parseInt(hex.substr(2, 2), 16) + amount);
+            const b = Math.min(255, parseInt(hex.substr(4, 2), 16) + amount);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        function darkenColor(color, amount) {
+            const hex = color.replace('#', '');
+            const r = Math.max(0, parseInt(hex.substr(0, 2), 16) - amount);
+            const g = Math.max(0, parseInt(hex.substr(2, 2), 16) - amount);
+            const b = Math.max(0, parseInt(hex.substr(4, 2), 16) - amount);
+            return `rgb(${r}, ${g}, ${b})`;
+        }
+
+        // Start game loop (connection happens when Play is clicked)
+        gameLoop();
+    </script>
+</body>
+</html>

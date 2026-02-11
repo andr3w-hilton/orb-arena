@@ -71,10 +71,10 @@ CRITICAL_MASS_TIMER = 30.0  # seconds before explosion
 POWERUP_COUNT = 5  # max on map at once
 POWERUP_RADIUS = 14
 POWERUP_RESPAWN_DELAY = 30.0  # seconds before replacement spawns
-POWERUP_TYPES = ["shield", "rapid_fire", "magnet", "phantom"]
-POWERUP_DURATIONS = {"shield": 5.0, "rapid_fire": 5.0, "magnet": 8.0, "phantom": 5.0}
-MAGNET_RANGE = 300  # radius for magnet pull
-MAGNET_STRENGTH = 10  # speed orbs move toward player
+POWERUP_TYPES = ["shield", "rapid_fire", "magnet", "phantom", "speed_force"]
+POWERUP_DURATIONS = {"shield": 5.0, "rapid_fire": 5.0, "magnet": 8.0, "phantom": 5.0, "speed_force": 7.0}
+MAGNET_RANGE = 400  # radius for magnet pull
+MAGNET_STRENGTH = 22  # speed orbs move toward player (must outpace base speed of 14)
 
 # Respawn invincibility
 RESPAWN_INVINCIBILITY = 3.0  # seconds
@@ -87,25 +87,25 @@ KILL_FEED_DURATION = 5.0  # seconds before message expires
 WALL_COUNT = 20
 
 # ── Natural Disaster Configuration ──
-DISASTER_MIN_INTERVAL = 290.0  # ~5 minutes between disasters (minus jitter)
-DISASTER_MAX_INTERVAL = 330.0  # ~5 minutes + 10-30s jitter
+DISASTER_MIN_INTERVAL = 170.0  # ~3 minutes between disasters (minus jitter)
+DISASTER_MAX_INTERVAL = 210.0  # ~3 minutes + 10-30s jitter
 DISASTER_WARNING_TIME = 5.0    # seconds of warning before disaster hits
 DISASTER_MIN_PLAYERS = 2       # need at least 2 players to trigger
-DISASTER_SETTLE_TIME = 120.0   # 2 min grace period after lobby first fills
+DISASTER_SETTLE_TIME = 60.0   # 1 min grace period after lobby first fills
 
 # Black Hole
 BLACK_HOLE_DURATION = 30.0
-BLACK_HOLE_MAX_RADIUS = 80     # visual/kill radius at full size
-BLACK_HOLE_PULL_RANGE = 750    # gravitational pull range
-BLACK_HOLE_PULL_STRENGTH = 18  # base pull speed (scaled by distance)
+BLACK_HOLE_MAX_RADIUS = 350    # visual/kill radius at full size
+BLACK_HOLE_PULL_RANGE = 2000   # gravitational pull range (40% of map)
+BLACK_HOLE_PULL_STRENGTH = 45  # base pull speed (scaled by distance)
 BLACK_HOLE_MASS_FACTOR = 0.7   # smaller players pulled harder (inverse mass)
 
 # Meteor Shower
-METEOR_SHOWER_DURATION = 10.0
+METEOR_SHOWER_DURATION = 20.0
 METEOR_INTERVAL = 0.15         # seconds between meteor strikes
-METEOR_DAMAGE = 8              # radius removed on hit
-METEOR_BLAST_RADIUS = 40       # area of effect per meteor
-METEOR_COUNT_PER_WAVE = 3      # meteors per interval tick
+METEOR_DAMAGE = 30             # radius removed on hit
+METEOR_BLAST_RADIUS = 120      # area of effect per meteor
+METEOR_COUNT_PER_WAVE = 5      # meteors per interval tick
 
 # Fog of War
 FOG_DURATION = 15.0
@@ -116,12 +116,12 @@ FRENZY_DURATION = 10.0
 FRENZY_ORB_COUNT = 1500        # orbs spawned at start
 
 # Supernova
-SUPERNOVA_RADIUS = 900         # blast radius from center
-SUPERNOVA_PULSE_COUNT = 5      # number of ripple pulses
+SUPERNOVA_RADIUS = 2200        # blast radius from center (~44% of map width)
+SUPERNOVA_PULSE_COUNT = 10     # number of ripple pulses
 SUPERNOVA_PULSE_INTERVAL = 1.5 # seconds between each pulse
 SUPERNOVA_PULSE_EXPAND_TIME = 1.2  # seconds for each ring to expand
-SUPERNOVA_MASS_LOSS_MIN = 0.08 # 8% mass loss per pulse (5 pulses ≈ 34% total)
-SUPERNOVA_MASS_LOSS_MAX = 0.12 # 12% mass loss per pulse (5 pulses ≈ 47% total)
+SUPERNOVA_MASS_LOSS_MIN = 0.15 # 15% mass loss per pulse at edge
+SUPERNOVA_MASS_LOSS_MAX = 0.20 # 20% mass loss per pulse at edge (up to 2x at epicentre)
 
 # Earthquake
 EARTHQUAKE_DURATION = 3.0      # wall transition time
@@ -132,8 +132,8 @@ MOVE_THRESHOLD_SQ = 25                 # 5^2 - minimum distance before moving
 KILL_BASE_SCORE = 100                  # base score for consuming a player
 KILL_SCORE_RATIO = 0.1                 # fraction of victim's score awarded as bonus
 BLACK_HOLE_INITIAL_RADIUS = 5.0        # starting radius before growth
-BLACK_HOLE_KILL_RADIUS_FACTOR = 0.5    # fraction of current_radius that kills
-BLACK_HOLE_ORB_PULL_STRENGTH = 8       # orb-specific pull strength
+BLACK_HOLE_KILL_RADIUS_FACTOR = 0.6    # fraction of current_radius that kills
+BLACK_HOLE_ORB_PULL_STRENGTH = 15      # orb-specific pull strength
 BLACK_HOLE_EXIT_ORB_COUNT = 30         # orbs scattered on collapse
 METEOR_MARKER_DURATION = 0.5           # seconds to keep impact marker visible
 
@@ -375,12 +375,55 @@ class DisasterManager:
         self.earthquake_progress: float = 0  # 0..1
         self.earthquake_old_walls: list = []
         self.earthquake_new_walls: list = []
+        # Test cycle state
+        self._test_queue: list = []  # remaining disaster types to test
+        self._test_running: bool = False  # True while last disaster is still active
+        self._test_gap: float = 3.0  # seconds between test disasters
+        self._test_next_time: float = 0
 
     def _player_count(self) -> int:
         return len(self.game.players)
 
+    def start_test_cycle(self, current_time: float):
+        """Start a test cycle that runs through all disasters in sequence."""
+        # End any active disaster first
+        if self.active_disaster:
+            self._end_disaster(current_time)
+        self.warning_active = False
+        self.warning_type = ""
+        self._test_queue = list(DISASTER_TYPES)
+        self._test_running = True
+        self._test_next_time = current_time + 1.0  # 1s before first disaster
+        print(f"[TEST] Disaster test cycle started: {self._test_queue}")
+
     def tick(self, current_time: float):
         """Called every game tick."""
+        # ── Test cycle override ──
+        if self._test_queue or self._test_running:
+            if self.active_disaster:
+                if current_time >= self.disaster_end:
+                    self._end_disaster(current_time)
+                    self._test_next_time = current_time + self._test_gap
+                    if not self._test_queue:
+                        self._test_running = False
+                        print("[TEST] Disaster test cycle complete")
+                else:
+                    self._tick_disaster(current_time)
+                return
+            if self.warning_active:
+                if current_time - self.warning_start >= DISASTER_WARNING_TIME:
+                    self._start_disaster(self.warning_type, current_time)
+                    self.warning_active = False
+                return
+            if self._test_queue and current_time >= self._test_next_time:
+                dtype = self._test_queue.pop(0)
+                self._test_running = True
+                self.warning_type = dtype
+                self.warning_active = True
+                self.warning_start = current_time
+                print(f"[TEST] Next disaster: {dtype} ({len(self._test_queue)} remaining)")
+            return
+
         player_count = self._player_count()
 
         # ── Lobby readiness / timer management ──
@@ -570,8 +613,14 @@ class DisasterManager:
                 continue
 
             mass_factor = (INITIAL_RADIUS / player.radius) ** BLACK_HOLE_MASS_FACTOR
-            proximity_factor = 1.0 - (dist / BLACK_HOLE_PULL_RANGE)
-            pull = BLACK_HOLE_PULL_STRENGTH * proximity_factor * mass_factor * progress
+            proximity_factor = (1.0 - (dist / BLACK_HOLE_PULL_RANGE)) ** 0.5  # sqrt curve — strong pull much further out
+            ramp = 0.3 + 0.7 * progress  # starts at 30% strength, not zero
+            pull = BLACK_HOLE_PULL_STRENGTH * proximity_factor * mass_factor * ramp
+
+            # Boosting reduces pull to 30% — costs mass but lets you claw out
+            if current_time < player.boost_active_until:
+                pull *= 0.3
+
             player.x += (dx / dist) * pull
             player.y += (dy / dist) * pull
 
@@ -675,7 +724,7 @@ class DisasterManager:
             self._apply_supernova()
 
     def _apply_supernova(self):
-        loss_pct = random.uniform(SUPERNOVA_MASS_LOSS_MIN, SUPERNOVA_MASS_LOSS_MAX)
+        base_loss = random.uniform(SUPERNOVA_MASS_LOSS_MIN, SUPERNOVA_MASS_LOSS_MAX)
         for player in self.game.players.values():
             if not player.alive:
                 continue
@@ -683,8 +732,17 @@ class DisasterManager:
             dy = player.y - self.supernova_y
             dist = math.sqrt(dx * dx + dy * dy)
             if dist < SUPERNOVA_RADIUS:
-                player.radius = max(MIN_RADIUS, player.radius * (1 - loss_pct))
+                # Closer to epicentre = up to 2x damage
+                proximity = 1.0 + (1.0 - dist / SUPERNOVA_RADIUS)
+                loss_pct = base_loss * proximity
+                player.radius = player.radius * (1 - loss_pct)
                 player.score = max(0, int(player.score * (1 - loss_pct * 0.5)))
+                # Kill if radius drops to minimum
+                if player.radius <= MIN_RADIUS:
+                    player.radius = MIN_RADIUS
+                    player.alive = False
+                    player.score = 0
+                    self.game.add_kill("Supernova", player.name)
 
     # ── Earthquake ──
 
@@ -713,6 +771,7 @@ class DisasterManager:
                 wall.x = old["x"] + (new["x"] - old["x"]) * t
                 wall.y = old["y"] + (new["y"] - old["y"]) * t
         self.game._walls_cache = None
+        self.game._walls_dirty = True
 
     def _finalize_earthquake(self):
         for new in self.earthquake_new_walls:
@@ -721,6 +780,8 @@ class DisasterManager:
                 wall.x = new["x"]
                 wall.y = new["y"]
         self.game._walls_cache = None
+        self.game._walls_dirty = True
+        self.game.relocate_trapped_orbs()
 
     def get_state(self, current_time: float) -> dict:
         """Return disaster state for broadcast to clients."""
@@ -786,6 +847,7 @@ class GameState:
         self._golden_orbs_cache: list = None
         self._powerup_orbs_cache: list = None
         self._walls_cache: list = None
+        self._walls_dirty: bool = False  # True when walls have moved and clients need an update
         self.spawn_walls()
         self.spawn_energy_orbs(ENERGY_ORB_COUNT)
         self.spawn_spike_orbs(SPIKE_ORB_COUNT)
@@ -815,6 +877,39 @@ class GameState:
             if not inside_wall:
                 return x, y
         return x, y  # fallback to last attempt
+
+    def _is_inside_wall(self, x: float, y: float, radius: float) -> bool:
+        """Check if a point with given radius overlaps any wall."""
+        for wall in self.walls.values():
+            if (wall.x - radius < x < wall.x + wall.width + radius and
+                wall.y - radius < y < wall.y + wall.height + radius):
+                return True
+        return False
+
+    def relocate_trapped_orbs(self):
+        """Move any orbs trapped inside walls to safe positions after earthquake."""
+        moved = False
+        for orb in self.energy_orbs.values():
+            if self._is_inside_wall(orb.x, orb.y, orb.radius):
+                orb.x, orb.y = self.find_safe_orb_position(orb.radius)
+                moved = True
+        for orb in self.spike_orbs.values():
+            if self._is_inside_wall(orb.x, orb.y, orb.radius):
+                orb.x, orb.y = self.find_safe_orb_position(orb.radius)
+                moved = True
+        for orb in self.golden_orbs.values():
+            if self._is_inside_wall(orb.x, orb.y, orb.radius):
+                orb.x, orb.y = self.find_safe_orb_position(orb.radius)
+                moved = True
+        for orb in self.powerup_orbs.values():
+            if self._is_inside_wall(orb.x, orb.y, orb.radius):
+                orb.x, orb.y = self.find_safe_orb_position(orb.radius)
+                moved = True
+        if moved:
+            self._energy_orbs_cache = None
+            self._spike_orbs_cache = None
+            self._golden_orbs_cache = None
+            self._powerup_orbs_cache = None
 
     def spawn_energy_orbs(self, count: int):
         """Spawn energy orbs at random positions."""
@@ -940,6 +1035,11 @@ class GameState:
             return
         player = self.players[player_id]
         current_time = time.time()
+
+        # Speed Force: unlimited boost — no cooldown, no mass cost
+        if player.active_powerup == "speed_force" and current_time < player.powerup_until:
+            player.boost_active_until = current_time + BOOST_DURATION
+            return
 
         # Check cooldown and minimum size
         if current_time < player.boost_cooldown_until:
@@ -1357,21 +1457,34 @@ class GameState:
                 player.active_powerup = ""
                 player.powerup_until = 0
 
-        magnet_moved = False
+        magnet_energy_moved = False
+        magnet_golden_moved = False
         for player in self.players.values():
             if not player.alive or player.active_powerup != "magnet" or current_time >= player.powerup_until:
                 continue
+            range_sq = MAGNET_RANGE * MAGNET_RANGE
             for orb in self.energy_orbs.values():
                 dx = player.x - orb.x
                 dy = player.y - orb.y
                 dist_sq = dx * dx + dy * dy
-                if dist_sq < MAGNET_RANGE * MAGNET_RANGE and dist_sq > 1:
+                if dist_sq < range_sq and dist_sq > 1:
                     dist = math.sqrt(dist_sq)
                     orb.x += (dx / dist) * MAGNET_STRENGTH
                     orb.y += (dy / dist) * MAGNET_STRENGTH
-                    magnet_moved = True
-        if magnet_moved:
+                    magnet_energy_moved = True
+            for orb in self.golden_orbs.values():
+                dx = player.x - orb.x
+                dy = player.y - orb.y
+                dist_sq = dx * dx + dy * dy
+                if dist_sq < range_sq and dist_sq > 1:
+                    dist = math.sqrt(dist_sq)
+                    orb.x += (dx / dist) * MAGNET_STRENGTH
+                    orb.y += (dy / dist) * MAGNET_STRENGTH
+                    magnet_golden_moved = True
+        if magnet_energy_moved:
             self._energy_orbs_cache = None
+        if magnet_golden_moved:
+            self._golden_orbs_cache = None
 
     def tick(self):
         """Update game state for one tick."""
@@ -1405,7 +1518,7 @@ class GameState:
         if self._powerup_orbs_cache is None:
             self._powerup_orbs_cache = [o.to_dict() for o in self.powerup_orbs.values()]
 
-        return {
+        state = {
             "type": "state",
             "players": [p.to_dict(current_time) for p in self.players.values()],
             "energy_orbs": self._energy_orbs_cache,
@@ -1417,6 +1530,16 @@ class GameState:
             "leaderboard": self.get_leaderboard(),
             "disaster": self.disaster_manager.get_state(current_time)
         }
+
+        # Include walls when they've moved (earthquake)
+        if self._walls_dirty:
+            if self._walls_cache is None:
+                self._walls_cache = [w.to_dict() for w in self.walls.values()]
+            state["walls"] = self._walls_cache
+            # Clear dirty flag once cache is built (will be set again next tick if still moving)
+            self._walls_dirty = False
+
+        return state
 
     def get_leaderboard(self) -> list:
         """Get top 10 players by score (cached for performance)."""
@@ -1558,6 +1681,9 @@ async def handle_client(websocket):
 
                     elif msg_type == "respawn":
                         game.respawn_player(player_id)
+
+                    elif msg_type == "test_disasters":
+                        game.disaster_manager.start_test_cycle(time.time())
 
                 except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                     pass  # Silently drop malformed messages

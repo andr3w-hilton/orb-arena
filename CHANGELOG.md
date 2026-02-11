@@ -1,5 +1,20 @@
 # Orb Arena - Changelog
 
+## v0.3.1 — Disaster Buffs & UI Fixes
+
+### Bug Fixes
+- Fixed earthquake not updating wall graphics — walls now visually move with the server-side collision positions during and after an earthquake
+- Fixed kill feed rendering behind the minimap after it was moved to top-left in v0.3.0
+
+### UI
+- Leaderboard is now collapsible — tap the header to toggle. Starts collapsed on mobile to save screen space
+
+### Disaster Balance
+- **Supernova:** blast radius 900 → 2200 (+144%, covers ~44% of map width). Mass loss per pulse 8-12% → 10-15% (+25%). Cumulative loss now 41-56% (was 34-47%)
+- **Meteor Shower:** duration 10s → 20s. Blast radius 40 → 120 (+200%, 9x area). Damage per hit 8 → 30 (+275%). Meteors per wave 3 → 5. Total meteors ~667 (was ~200). Overall lethality ~56x previous
+- **Black Hole:** max radius 80 → 200 (+150%). Pull range 750 → 1500 (+100%, covers 30% of map). Pull strength 18 → 30 (+67%). Kill zone factor 0.5 → 0.6. Orb pull strength 8 → 15 (+88%)
+- Disaster spawn interval reduced from ~5 min to ~3 min. Settle time reduced from 2 min to 1 min
+
 ## v0.3.0 — Mobile HUD Overhaul & Code Quality
 
 ### Mobile UI

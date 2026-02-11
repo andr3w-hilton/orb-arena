@@ -243,6 +243,30 @@
             font-size: 0.9rem;
             text-transform: uppercase;
             letter-spacing: 2px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+
+        #leaderboard h3 .toggle-icon {
+            font-size: 0.7rem;
+            transition: transform 0.2s ease;
+            margin-left: 8px;
+        }
+
+        #leaderboard.collapsed h3 {
+            margin-bottom: 0;
+        }
+
+        #leaderboard.collapsed h3 .toggle-icon {
+            transform: rotate(180deg);
+        }
+
+        #leaderboard.collapsed #leaderboard-list {
+            display: none;
         }
 
         #leaderboard-list {
@@ -430,20 +454,6 @@
         }
 
         /* Critical Mass Warning HUD */
-        #critical-mass-hud {
-            position: fixed;
-            bottom: 40px;
-            left: 55%;
-            transform: translateX(-50%);
-            padding: 8px 20px;
-            border-radius: 10px;
-            font-size: 1.2rem;
-            font-weight: bold;
-            z-index: 15;
-            display: none;
-            text-align: center;
-            border: 2px solid;
-        }
 
         /* Power-Up HUD */
         #powerup-hud {
@@ -465,9 +475,9 @@
             top: 10px;
             left: 50%;
             transform: translateX(-50%);
-            padding: 10px 30px;
-            border-radius: 12px;
-            font-size: 1.3rem;
+            padding: 8px 20px;
+            border-radius: 10px;
+            font-size: 1.2rem;
             font-weight: bold;
             z-index: 25;
             display: none;
@@ -538,6 +548,14 @@
             #powerup-hud {
                 top: 168px;
             }
+
+            #disaster-hud {
+                top: auto;
+                bottom: 40px;
+                left: calc(50% + 50px);
+                font-size: 1rem;
+                padding: 6px 16px;
+            }
         }
     </style>
 </head>
@@ -567,6 +585,7 @@
                         <li class="orb-purple">Rapid Fire &mdash; 2x shoot speed</li>
                         <li class="orb-purple">Magnet &mdash; pull nearby orbs</li>
                         <li class="orb-purple">Phantom &mdash; pass through walls</li>
+                        <li class="orb-purple">Speed Force &mdash; unlimited boost for 7s</li>
                     </ul>
                 </div>
                 <div class="guide-card">
@@ -608,7 +627,7 @@
 
     <!-- Leaderboard -->
     <div id="leaderboard">
-        <h3>Leaderboard</h3>
+        <h3>Leaderboard <span class="toggle-icon">▲</span></h3>
         <ol id="leaderboard-list"></ol>
     </div>
 
@@ -626,8 +645,6 @@
     <div id="disaster-hud"></div>
 
     <!-- Critical Mass Warning -->
-    <div id="critical-mass-hud"></div>
-
     <!-- Power-Up HUD -->
     <div id="powerup-hud"></div>
 
@@ -901,9 +918,19 @@
         const finalScore = document.getElementById('final-score');
         const boostBtn = document.getElementById('boost-btn');
         const shootBtn = document.getElementById('shoot-btn');
-        const criticalMassHud = document.getElementById('critical-mass-hud');
         const powerupHud = document.getElementById('powerup-hud');
         const disasterHud = document.getElementById('disaster-hud');
+
+        // Leaderboard collapse toggle
+        const leaderboardHeader = leaderboard.querySelector('h3');
+        leaderboardHeader.addEventListener('click', function(e) {
+            e.stopPropagation();
+            leaderboard.classList.toggle('collapsed');
+        });
+        // Start collapsed on mobile
+        if (window.innerWidth <= 768) {
+            leaderboard.classList.add('collapsed');
+        }
 
         // WebSocket
         let ws = null;
@@ -1025,7 +1052,7 @@
 
             // Detect power-up pickup (before state overwrite so we compare old vs new)
             if (data.you.active_powerup && (!state.you || !state.you.active_powerup || state.you.active_powerup !== data.you.active_powerup)) {
-                const names = { shield: 'SHIELD', rapid_fire: 'RAPID FIRE', magnet: 'MAGNET', phantom: 'PHANTOM' };
+                const names = { shield: 'SHIELD', rapid_fire: 'RAPID FIRE', magnet: 'MAGNET', phantom: 'PHANTOM', speed_force: 'SPEED FORCE' };
                 state.powerupPopup = { text: names[data.you.active_powerup] || data.you.active_powerup.toUpperCase(), time: Date.now() };
             }
 
@@ -1039,6 +1066,7 @@
             state.killFeed = data.kill_feed || [];
             state.leaderboard = data.leaderboard;
             state.disaster = data.disaster || { active: null, warning: null };
+            if (data.walls) state.walls = data.walls;
 
             if (!state.you.alive && state.playing) {
                 showDeathScreen();
@@ -1061,7 +1089,6 @@
             deathScreen.style.display = 'flex';
             boostBtn.style.display = 'none';
             shootBtn.style.display = 'none';
-            criticalMassHud.style.display = 'none';
             powerupHud.style.display = 'none';
         }
 
@@ -1181,11 +1208,34 @@
             touchCurrent = null;
         }, { passive: false });
 
+        // Track held keys for combo shortcuts
+        const keysHeld = new Set();
+        document.addEventListener('keyup', (e) => keysHeld.delete(e.code));
+
         // Keyboard events for boost (desktop)
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && state.playing && state.you && state.you.alive) {
                 e.preventDefault();
                 sendBoost();
+            }
+            // C = shoot toward mouse cursor (desktop)
+            if (e.code === 'KeyC' && state.playing && state.you && state.you.alive && !isTouchDevice) {
+                const worldX = mouseX / currentZoom + state.camera.x;
+                const worldY = mouseY / currentZoom + state.camera.y;
+                sendShoot(worldX, worldY);
+            }
+            // T+4 = test cycle through all disasters
+            if (e.code === 'KeyT' && state.playing && ws && ws.readyState === WebSocket.OPEN) {
+                keysHeld.add('KeyT');
+                if (keysHeld.has('Digit4')) {
+                    ws.send(JSON.stringify({ type: 'test_disasters' }));
+                }
+            }
+            if (e.code === 'Digit4' && state.playing && ws && ws.readyState === WebSocket.OPEN) {
+                keysHeld.add('Digit4');
+                if (keysHeld.has('KeyT')) {
+                    ws.send(JSON.stringify({ type: 'test_disasters' }));
+                }
             }
         });
 
@@ -1307,37 +1357,13 @@
             }
         }
 
-        // Update critical mass HUD
-        function updateCriticalMassHud() {
-            if (!state.you || !state.you.alive || !state.you.critical_mass_active) {
-                criticalMassHud.style.display = 'none';
-                return;
-            }
-            const remaining = state.you.critical_mass_remaining;
-            criticalMassHud.style.display = 'block';
-            criticalMassHud.textContent = `CRITICAL MASS: ${Math.ceil(remaining)}s`;
-
-            if (remaining > 20) {
-                criticalMassHud.style.background = 'rgba(0, 180, 0, 0.3)';
-                criticalMassHud.style.borderColor = '#00ff88';
-                criticalMassHud.style.color = '#00ff88';
-            } else if (remaining > 10) {
-                criticalMassHud.style.background = 'rgba(200, 180, 0, 0.3)';
-                criticalMassHud.style.borderColor = '#ffcc00';
-                criticalMassHud.style.color = '#ffcc00';
-            } else {
-                criticalMassHud.style.background = 'rgba(200, 0, 0, 0.4)';
-                criticalMassHud.style.borderColor = '#ff4444';
-                criticalMassHud.style.color = '#ff4444';
-            }
-        }
-
         // Power-up HUD colors
         const POWERUP_COLORS = {
             shield: { bg: 'rgba(200, 180, 0, 0.3)', border: '#ffd700', text: '#ffd700', name: 'SHIELD' },
             rapid_fire: { bg: 'rgba(200, 80, 0, 0.3)', border: '#ff6632', text: '#ff6632', name: 'RAPID FIRE' },
             magnet: { bg: 'rgba(0, 150, 50, 0.3)', border: '#00ff88', text: '#00ff88', name: 'MAGNET' },
-            phantom: { bg: 'rgba(0, 150, 200, 0.3)', border: '#00d4ff', text: '#00d4ff', name: 'PHANTOM' }
+            phantom: { bg: 'rgba(0, 150, 200, 0.3)', border: '#00d4ff', text: '#00d4ff', name: 'PHANTOM' },
+            speed_force: { bg: 'rgba(255, 220, 0, 0.3)', border: '#ffee00', text: '#ffee00', name: 'SPEED FORCE' }
         };
 
         function updatePowerUpHud() {
@@ -1497,9 +1523,9 @@
 
             ctx.save();
 
-            // Dark overlay with circular cutout using evenodd fill rule
+            // Fully opaque overlay with circular cutout using evenodd fill rule
             // This leaves the game world visible inside the circle
-            ctx.fillStyle = 'rgba(5, 5, 20, 0.93)';
+            ctx.fillStyle = 'rgb(5, 5, 20)';
             ctx.beginPath();
             ctx.rect(0, 0, vw, vh);
             ctx.arc(screenX, screenY, fogRadius, 0, Math.PI * 2, true);
@@ -1511,7 +1537,7 @@
                 screenX, screenY, fogRadius
             );
             edgeGrad.addColorStop(0, 'rgba(5, 5, 20, 0)');
-            edgeGrad.addColorStop(1, 'rgba(5, 5, 20, 0.93)');
+            edgeGrad.addColorStop(1, 'rgb(5, 5, 20)');
             ctx.fillStyle = edgeGrad;
             ctx.beginPath();
             ctx.arc(screenX, screenY, fogRadius, 0, Math.PI * 2);
@@ -1554,65 +1580,108 @@
                 }
             }
 
-            // Draw each pulse ring
+            // Draw each pulse ring as a thick fiery wave
             for (let p = 0; p < pulseCount; p++) {
                 const pulseStart = p * pulseInterval;
                 const pulseElapsed = elapsed - pulseStart;
-                if (pulseElapsed < 0) continue; // not started yet
+                if (pulseElapsed < 0) continue;
                 const fadeTime = pulseExpand + 0.5;
-                if (pulseElapsed > fadeTime) continue; // fully faded
+                if (pulseElapsed > fadeTime) continue;
 
                 const expandT = Math.min(1, pulseElapsed / pulseExpand);
                 const waveRadius = nova.radius * expandT;
                 const alpha = Math.max(0, 1 - pulseElapsed / fadeTime);
+                if (waveRadius < 5) continue;
 
-                // Color shifts slightly per pulse (orange → red → pink)
+                // Color shifts per pulse (white-hot → orange → red → deep red)
                 const r = 255;
-                const g = Math.max(80, 200 - p * 30);
-                const b = 50 + p * 25;
+                const g = Math.max(40, 220 - p * 20);
+                const b = Math.max(20, 60 - p * 5);
 
-                // Expanding ring
-                ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.8})`;
-                ctx.lineWidth = Math.max(1, 7 - pulseElapsed * 3);
+                // Thick fiery band — gradient from transparent edges to bright core
+                const bandWidth = Math.max(8, 60 - pulseElapsed * 20);
+                const innerR = Math.max(1, waveRadius - bandWidth);
+                const outerR = waveRadius + bandWidth;
+
+                const flameGrad = ctx.createRadialGradient(screenX, screenY, innerR, screenX, screenY, outerR);
+                flameGrad.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0)`);
+                flameGrad.addColorStop(0.3, `rgba(${r}, ${Math.min(255, g + 60)}, ${b}, ${alpha * 0.5})`);
+                flameGrad.addColorStop(0.5, `rgba(255, ${Math.min(255, g + 100)}, ${Math.min(255, b + 80)}, ${alpha * 0.85})`);
+                flameGrad.addColorStop(0.7, `rgba(${r}, ${Math.min(255, g + 60)}, ${b}, ${alpha * 0.5})`);
+                flameGrad.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+                ctx.fillStyle = flameGrad;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, outerR, 0, Math.PI * 2);
+                ctx.arc(screenX, screenY, Math.max(0, innerR), 0, Math.PI * 2, true);
+                ctx.fill('evenodd');
+
+                // Bright leading edge stroke
+                ctx.strokeStyle = `rgba(255, ${Math.min(255, g + 120)}, ${Math.min(255, b + 100)}, ${alpha * 0.9})`;
+                ctx.lineWidth = Math.max(2, 4 - pulseElapsed * 1.5);
                 ctx.beginPath();
                 ctx.arc(screenX, screenY, waveRadius, 0, Math.PI * 2);
                 ctx.stroke();
 
-                // Inner glow (only while expanding)
+                // Heat haze glow behind the wave front
                 if (pulseElapsed < pulseExpand) {
-                    const glowR = Math.max(1, waveRadius * 0.7);
-                    const glowGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, glowR);
-                    glowGrad.addColorStop(0, `rgba(255, 255, 200, ${alpha * 0.35})`);
-                    glowGrad.addColorStop(0.4, `rgba(${r}, ${g}, ${b}, ${alpha * 0.2})`);
-                    glowGrad.addColorStop(1, 'transparent');
-                    ctx.fillStyle = glowGrad;
+                    const hazeR = Math.max(1, waveRadius * 0.85);
+                    const hazeGrad = ctx.createRadialGradient(screenX, screenY, hazeR * 0.3, screenX, screenY, hazeR);
+                    hazeGrad.addColorStop(0, `rgba(255, 200, 100, ${alpha * 0.15})`);
+                    hazeGrad.addColorStop(0.6, `rgba(${r}, ${g}, ${b}, ${alpha * 0.08})`);
+                    hazeGrad.addColorStop(1, 'transparent');
+                    ctx.fillStyle = hazeGrad;
                     ctx.beginPath();
-                    ctx.arc(screenX, screenY, glowR, 0, Math.PI * 2);
+                    ctx.arc(screenX, screenY, hazeR, 0, Math.PI * 2);
                     ctx.fill();
                 }
 
-                // Debris particles per ring
-                for (let i = 0; i < 12; i++) {
-                    const angle = i * Math.PI / 6 + pulseElapsed * 0.8 + p;
-                    const dist = waveRadius * (0.4 + (i % 3) * 0.2);
+                // Ember particles along the wave front
+                const emberCount = 24;
+                for (let i = 0; i < emberCount; i++) {
+                    const angle = i * Math.PI * 2 / emberCount + pulseElapsed * 1.2 + p * 0.7;
+                    const wobble = Math.sin(elapsed * 6 + i * 2.5 + p) * bandWidth * 0.6;
+                    const dist = waveRadius + wobble;
                     const px = screenX + Math.cos(angle) * dist;
                     const py = screenY + Math.sin(angle) * dist;
-                    ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha * 0.5})`;
+                    const emberAlpha = alpha * (0.4 + Math.sin(elapsed * 8 + i * 3) * 0.3);
+                    const emberSize = Math.max(1, (3.5 - pulseElapsed * 1.2) * (0.6 + Math.random() * 0.4));
+
+                    // Bright ember core
+                    ctx.fillStyle = `rgba(255, ${180 + Math.floor(Math.random() * 75)}, ${Math.floor(Math.random() * 60)}, ${emberAlpha})`;
                     ctx.beginPath();
-                    ctx.arc(px, py, Math.max(0.5, 2.5 - pulseElapsed * 0.8), 0, Math.PI * 2);
+                    ctx.arc(px, py, emberSize, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // Ember glow
+                    ctx.fillStyle = `rgba(${r}, ${g}, 0, ${emberAlpha * 0.3})`;
+                    ctx.beginPath();
+                    ctx.arc(px, py, emberSize * 2.5, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
 
             // Pulsing core glow while active
-            const coreAlpha = Math.max(0, 0.4 * Math.sin(elapsed * 4) * (1 - elapsed / (pulseCount * pulseInterval + pulseExpand)));
+            const coreFade = Math.max(0, 1 - elapsed / (pulseCount * pulseInterval + pulseExpand));
+            const coreAlpha = Math.max(0, 0.6 * Math.sin(elapsed * 4) * coreFade);
             if (coreAlpha > 0) {
-                const coreGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 40);
-                coreGrad.addColorStop(0, `rgba(255, 255, 255, ${coreAlpha})`);
+                // Outer heat glow
+                const outerGlow = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 80);
+                outerGlow.addColorStop(0, `rgba(255, 200, 100, ${coreAlpha * 0.4})`);
+                outerGlow.addColorStop(0.5, `rgba(255, 100, 30, ${coreAlpha * 0.2})`);
+                outerGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = outerGlow;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, 80, 0, Math.PI * 2);
+                ctx.fill();
+
+                // White-hot inner core
+                const coreGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, 30);
+                coreGrad.addColorStop(0, `rgba(255, 255, 240, ${coreAlpha})`);
+                coreGrad.addColorStop(0.6, `rgba(255, 180, 60, ${coreAlpha * 0.6})`);
                 coreGrad.addColorStop(1, 'transparent');
                 ctx.fillStyle = coreGrad;
                 ctx.beginPath();
-                ctx.arc(screenX, screenY, 40, 0, Math.PI * 2);
+                ctx.arc(screenX, screenY, 30, 0, Math.PI * 2);
                 ctx.fill();
             }
         }
@@ -1679,9 +1748,6 @@
 
             // Update mobile shoot button
             updateShootButton();
-
-            // Update critical mass warning
-            updateCriticalMassHud();
 
             // Update power-up HUD
             updatePowerUpHud();
@@ -2171,8 +2237,9 @@
             ctx.font = 'bold 13px Segoe UI';
             ctx.textAlign = 'left';
 
-            // Position below score (start at y=100 to avoid HUD overlap)
-            const startY = 100;
+            // Position below minimap to avoid overlap
+            const isMobile = window.innerWidth <= 768;
+            const startY = 60 + (isMobile ? 100 : 150) + 14; // minimap top + size + border + gap
 
             state.killFeed.forEach((kill, index) => {
                 const y = startY + index * 22;
@@ -2236,8 +2303,8 @@
             }
 
             const canShoot = state.you.shoot_ready && state.you.radius >= PROJECTILE_MIN_RADIUS;
-            const shootLabel = state.you.radius < PROJECTILE_MIN_RADIUS ? 'GROW' : 'SHOOT [CLICK]';
-            drawHudBar(x, y - 30, 100, 10, canShoot, '#ff6632', shootLabel, 'SHOOT [CLICK]');
+            const shootLabel = state.you.radius < PROJECTILE_MIN_RADIUS ? 'GROW' : 'SHOOT [C/CLICK]';
+            drawHudBar(x, y - 30, 100, 10, canShoot, '#ff6632', shootLabel, 'SHOOT [C/CLICK]');
         }
 
         function drawPowerUpPopup() {
@@ -2321,10 +2388,15 @@
             ctx.arc(screenX, screenY, player.radius + 20, 0, Math.PI * 2);
             ctx.stroke();
 
+            // "CRITICAL MASS" label above player
             ctx.fillStyle = warningColor;
-            ctx.font = 'bold 16px Segoe UI';
+            ctx.font = 'bold 18px Segoe UI';
             ctx.textAlign = 'center';
-            ctx.fillText(`${Math.ceil(remaining)}s`, screenX, screenY + player.radius + 25);
+            ctx.fillText('CRITICAL MASS', screenX, screenY - player.radius - 28);
+
+            // Countdown below player
+            ctx.font = `bold ${remaining < 10 ? 28 : 22}px Segoe UI`;
+            ctx.fillText(`${Math.ceil(remaining)}s`, screenX, screenY + player.radius + 30);
         }
 
         function drawPowerupEffect(screenX, screenY, player) {
@@ -2369,6 +2441,33 @@
                 }
             } else if (player.active_powerup === 'phantom') {
                 ctx.globalAlpha = 0.4;
+            } else if (player.active_powerup === 'speed_force') {
+                // Lightning crackling around the player
+                const t = Date.now() / 1000;
+                for (let i = 0; i < 8; i++) {
+                    const angle = t * 3 + i * Math.PI / 4;
+                    const dist = player.radius + 6 + Math.sin(t * 12 + i * 5) * 10;
+                    const bx = screenX + Math.cos(angle) * dist;
+                    const by = screenY + Math.sin(angle) * dist;
+                    // Lightning bolt segments
+                    ctx.strokeStyle = `rgba(255, 238, 0, ${0.6 + Math.sin(t * 15 + i) * 0.4})`;
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(screenX + Math.cos(angle) * player.radius, screenY + Math.sin(angle) * player.radius);
+                    const midDist = (player.radius + dist) / 2;
+                    const jag = (Math.random() - 0.5) * 12;
+                    ctx.lineTo(screenX + Math.cos(angle) * midDist + jag, screenY + Math.sin(angle) * midDist + jag);
+                    ctx.lineTo(bx, by);
+                    ctx.stroke();
+                }
+                // Speed glow
+                const speedGlow = ctx.createRadialGradient(screenX, screenY, player.radius, screenX, screenY, player.radius + 20);
+                speedGlow.addColorStop(0, `rgba(255, 238, 0, ${0.15 + Math.sin(t * 8) * 0.1})`);
+                speedGlow.addColorStop(1, 'transparent');
+                ctx.fillStyle = speedGlow;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, player.radius + 20, 0, Math.PI * 2);
+                ctx.fill();
             }
         }
 

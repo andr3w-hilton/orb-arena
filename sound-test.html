@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orb Arena - Sound Test</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: #0a0a1a;
+            color: #e0e0e0;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            padding: 24px;
+            min-height: 100vh;
+        }
+        h1 {
+            text-align: center;
+            font-size: 28px;
+            margin-bottom: 8px;
+            background: linear-gradient(135deg, #00ff88, #00ccff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 32px;
+            font-size: 14px;
+        }
+        .category {
+            margin-bottom: 28px;
+        }
+        .category-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #888;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 12px;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #1a1a2e;
+        }
+        .sound-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .sound-btn {
+            background: #1a1a2e;
+            border: 1px solid #2a2a4e;
+            color: #e0e0e0;
+            padding: 14px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.15s;
+            text-align: left;
+        }
+        .sound-btn:hover {
+            background: #252545;
+            border-color: #3a3a6e;
+        }
+        .sound-btn:active {
+            background: #303060;
+            transform: scale(0.97);
+        }
+        .sound-btn .label {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .sound-btn .desc {
+            font-size: 11px;
+            color: #777;
+        }
+
+        /* Colour-code categories */
+        .combat .sound-btn { border-left: 3px solid #ff4466; }
+        .pickup .sound-btn { border-left: 3px solid #00ff88; }
+        .powerup .sound-btn { border-left: 3px solid #dd44ff; }
+        .disaster .sound-btn { border-left: 3px solid #ff8800; }
+        .ui .sound-btn { border-left: 3px solid #00ccff; }
+
+        /* Volume control */
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 16px;
+            margin-bottom: 24px;
+            padding: 12px;
+            background: #111122;
+            border-radius: 8px;
+        }
+        .controls label { font-size: 13px; color: #888; }
+        .controls input[type="range"] { width: 160px; accent-color: #00ff88; }
+        .vol-display { font-size: 13px; color: #00ff88; min-width: 36px; }
+
+        /* Ambient music player */
+        .ambient-panel {
+            margin-bottom: 28px;
+            padding: 20px;
+            background: linear-gradient(135deg, #0d0d20, #141430);
+            border: 1px solid #2a2a4e;
+            border-radius: 10px;
+        }
+        .ambient-panel .category-title {
+            border-bottom-color: #2a2a4e;
+        }
+        .ambient-controls {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .ambient-btn {
+            background: #1a1a2e;
+            border: 1px solid #3a3a6e;
+            color: #e0e0e0;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            font-weight: 600;
+            transition: all 0.15s;
+        }
+        .ambient-btn:hover { background: #252545; }
+        .ambient-btn.active {
+            background: #1a3a2a;
+            border-color: #00ff88;
+            color: #00ff88;
+        }
+        .ambient-label { font-size: 12px; color: #666; }
+        .ambient-viz {
+            width: 100%;
+            height: 40px;
+            margin-top: 12px;
+            border-radius: 4px;
+            background: #0a0a15;
+        }
+    </style>
+</head>
+<body>
+    <h1>Orb Arena Sound Test</h1>
+    <p class="subtitle">Click each button to preview. Tweak the functions in the script to adjust.</p>
+
+    <div class="controls">
+        <label>Master Volume</label>
+        <input type="range" id="volume" min="0" max="100" value="50">
+        <span class="vol-display" id="vol-display">50%</span>
+    </div>
+
+    <div class="ambient-panel">
+        <div class="category-title">Ambient Music - Landing Page</div>
+        <div class="ambient-controls">
+            <button class="ambient-btn" id="amb-toggle" onclick="ambient.toggle()">Play</button>
+            <span class="ambient-label">Style:</span>
+            <button class="ambient-btn" id="amb-dark" onclick="ambient.setStyle('dark')">Dark Drift</button>
+            <button class="ambient-btn" id="amb-pulse" onclick="ambient.setStyle('pulse')">Low Pulse</button>
+            <button class="ambient-btn" id="amb-cosmic" onclick="ambient.setStyle('cosmic')">Cosmic Hum</button>
+        </div>
+        <canvas class="ambient-viz" id="amb-viz"></canvas>
+    </div>
+
+    <div class="category combat">
+        <div class="category-title">Combat</div>
+        <div class="sound-grid">
+            <button class="sound-btn" onclick="sfx.shoot()">
+                <div class="label">Shoot</div>
+                <div class="desc">Normal projectile fire</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.homingShoot()">
+                <div class="label">Homing (Current)</div>
+                <div class="desc">Heavy rocket launch (original)</div>
+            </button>
+            <button class="sound-btn" style="border-left-color: #ffaa00;" onclick="sfx.homingA()">
+                <div class="label">Homing A</div>
+                <div class="desc">Deep bass whoosh with rising sweep</div>
+            </button>
+            <button class="sound-btn" style="border-left-color: #ffaa00;" onclick="sfx.homingB()">
+                <div class="label">Homing B</div>
+                <div class="desc">Punchy sub thump into filtered whoosh</div>
+            </button>
+            <button class="sound-btn" style="border-left-color: #ffaa00;" onclick="sfx.homingC()">
+                <div class="label">Homing C</div>
+                <div class="desc">Tight bass pulse with airy swoosh</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.hit()">
+                <div class="label">Hit / Take Damage</div>
+                <div class="desc">Projectile hits a player</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.kill()">
+                <div class="label">Kill</div>
+                <div class="desc">You consumed another player</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.death()">
+                <div class="label">Death</div>
+                <div class="desc">You died</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.boost()">
+                <div class="label">Boost / Dash</div>
+                <div class="desc">Speed dash activation</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.mineDrop()">
+                <div class="label">Mine Place</div>
+                <div class="desc">Dropping a mine</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.mineExplode()">
+                <div class="label">Mine Explode</div>
+                <div class="desc">Proximity detonation</div>
+            </button>
+        </div>
+    </div>
+
+    <div class="category pickup">
+        <div class="category-title">Pickups</div>
+        <div class="sound-grid">
+            <button class="sound-btn" onclick="sfx.orbPickup()">
+                <div class="label">Energy Orb</div>
+                <div class="desc">Standard orb collection</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.goldenPickup()">
+                <div class="label">Golden Orb</div>
+                <div class="desc">High-value orb collection</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.spikeHit()">
+                <div class="label">Spike Orb</div>
+                <div class="desc">Hit a spike - ouch</div>
+            </button>
+        </div>
+    </div>
+
+    <div class="category powerup">
+        <div class="category-title">Power-ups</div>
+        <div class="sound-grid">
+            <button class="sound-btn" onclick="sfx.powerupPickup()">
+                <div class="label">Power-up Collect</div>
+                <div class="desc">Generic power-up activation</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.shieldBlock()">
+                <div class="label">Shield Block</div>
+                <div class="desc">Shield absorbs a hit</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.powerupExpire()">
+                <div class="label">Power-up Expire</div>
+                <div class="desc">Timed power-up runs out</div>
+            </button>
+        </div>
+    </div>
+
+    <div class="category disaster">
+        <div class="category-title">Disasters</div>
+        <div class="sound-grid">
+            <button class="sound-btn" onclick="sfx.disasterWarning()">
+                <div class="label">Warning (Current)</div>
+                <div class="desc">Sawtooth klaxon - original</div>
+            </button>
+            <button class="sound-btn" style="border-left-color: #ffaa00;" onclick="sfx.warningA()">
+                <div class="label">Warning A</div>
+                <div class="desc">Soft sine pulse - gentle throb</div>
+            </button>
+            <button class="sound-btn" style="border-left-color: #ffaa00;" onclick="sfx.warningB()">
+                <div class="label">Warning B</div>
+                <div class="desc">Low rumble swell - deep &amp; warm</div>
+            </button>
+            <button class="sound-btn" style="border-left-color: #ffaa00;" onclick="sfx.warningC()">
+                <div class="label">Warning C</div>
+                <div class="desc">Descending chime - melodic alert</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.meteorImpact()">
+                <div class="label">Meteor Impact</div>
+                <div class="desc">Single meteor hit</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.supernovaPulse()">
+                <div class="label">Supernova Pulse</div>
+                <div class="desc">Expanding shockwave ring</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.blackHoleHum()">
+                <div class="label">Black Hole</div>
+                <div class="desc">Gravitational hum (loops 2s)</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.earthquakeRumble()">
+                <div class="label">Earthquake</div>
+                <div class="desc">Low rumble (1.5s)</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.feedingFrenzy()">
+                <div class="label">Feeding Frenzy</div>
+                <div class="desc">Bonus orb spawn jingle</div>
+            </button>
+        </div>
+    </div>
+
+    <div class="category ui">
+        <div class="category-title">UI</div>
+        <div class="sound-grid">
+            <button class="sound-btn" onclick="sfx.respawn()">
+                <div class="label">Respawn</div>
+                <div class="desc">Player rejoins the arena</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.criticalMassTick()">
+                <div class="label">Critical Mass Tick</div>
+                <div class="desc">Countdown beep (plays faster near 0)</div>
+            </button>
+            <button class="sound-btn" onclick="sfx.criticalMassExplode()">
+                <div class="label">Critical Mass Explode</div>
+                <div class="desc">Self-destruct detonation</div>
+            </button>
+        </div>
+    </div>
+
+<script>
+// ============================================================
+// Orb Arena - Sound Effects (Web Audio API, fully synthesised)
+//
+// Tweak any parameters below then click the button to re-test.
+// Once happy, we'll copy these functions into the game client.
+// ============================================================
+
+let audioCtx = null;
+function ctx() {
+    if (!audioCtx) audioCtx = new AudioContext();
+    return audioCtx;
+}
+
+function vol() {
+    return document.getElementById('volume').value / 100;
+}
+
+// Master gain helper
+function gain(v) {
+    const g = ctx().createGain();
+    g.gain.value = v * vol();
+    g.connect(ctx().destination);
+    return g;
+}
+
+// Utility: play a tone with envelope
+function tone(freq, type, attack, decay, volume, detune) {
+    const ac = ctx();
+    const osc = ac.createOscillator();
+    const g = ac.createGain();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    if (detune) osc.detune.value = detune;
+    g.gain.setValueAtTime(0, ac.currentTime);
+    g.gain.linearRampToValueAtTime(volume * vol(), ac.currentTime + attack);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + attack + decay);
+    osc.connect(g);
+    g.connect(ac.destination);
+    osc.start(ac.currentTime);
+    osc.stop(ac.currentTime + attack + decay + 0.05);
+    return { osc, gain: g };
+}
+
+// Utility: noise burst
+function noise(duration, volume, filterFreq, filterType) {
+    const ac = ctx();
+    const buf = ac.createBuffer(1, ac.sampleRate * duration, ac.sampleRate);
+    const data = buf.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource();
+    src.buffer = buf;
+    const filter = ac.createBiquadFilter();
+    filter.type = filterType || 'lowpass';
+    filter.frequency.value = filterFreq || 2000;
+    const g = ac.createGain();
+    g.gain.setValueAtTime(volume * vol(), ac.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + duration);
+    src.connect(filter);
+    filter.connect(g);
+    g.connect(ac.destination);
+    src.start();
+    return { src, gain: g, filter };
+}
+
+
+const sfx = {
+
+    // ------ COMBAT ------
+
+    shoot() {
+        // Short punchy "pew" - sine sweep down
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(900, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, ac.currentTime + 0.12);
+        g.gain.setValueAtTime(0.3 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.12);
+        osc.connect(g);
+        g.connect(ac.destination);
+        osc.start();
+        osc.stop(ac.currentTime + 0.15);
+    },
+
+    homingShoot() {
+        // Heavy rocket launch - chest-thump ignition into aggressive engine roar
+        const ac = ctx();
+        // Sub bass ignition thump
+        const sub = ac.createOscillator();
+        const gs = ac.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(55, ac.currentTime);
+        sub.frequency.exponentialRampToValueAtTime(25, ac.currentTime + 0.2);
+        gs.gain.setValueAtTime(0.45 * vol(), ac.currentTime);
+        gs.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.25);
+        sub.connect(gs); gs.connect(ac.destination);
+        sub.start(); sub.stop(ac.currentTime + 0.3);
+        // Burst noise for the blast
+        noise(0.12, 0.3, 800, 'lowpass');
+        // Distorted engine roar - rising sawtooth through waveshaper
+        const osc = ac.createOscillator();
+        const shaper = ac.createWaveShaper();
+        const curve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            const x = (i / 128) - 1;
+            curve[i] = Math.tanh(x * 2.5);
+        }
+        shaper.curve = curve;
+        const g = ac.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(150, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(600, ac.currentTime + 0.35);
+        g.gain.setValueAtTime(0.001, ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.22 * vol(), ac.currentTime + 0.06);
+        g.gain.setValueAtTime(0.22 * vol(), ac.currentTime + 0.25);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.45);
+        osc.connect(shaper); shaper.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.5);
+        // High-end sizzle trailing off
+        setTimeout(() => noise(0.15, 0.1, 4000, 'highpass'), 100);
+    },
+
+    // --- HOMING VARIANTS (whoosh + bass) ---
+
+    homingA() {
+        // Deep bass whoosh with rising sweep - starts low, swoops upward
+        const ac = ctx();
+        // Big sub bass punch
+        const sub = ac.createOscillator();
+        const gs = ac.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(40, ac.currentTime);
+        sub.frequency.exponentialRampToValueAtTime(80, ac.currentTime + 0.15);
+        sub.frequency.exponentialRampToValueAtTime(30, ac.currentTime + 0.35);
+        gs.gain.setValueAtTime(0.5 * vol(), ac.currentTime);
+        gs.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+        sub.connect(gs); gs.connect(ac.destination);
+        sub.start(); sub.stop(ac.currentTime + 0.45);
+        // Filtered noise whoosh - bandpass sweeps upward
+        const buf = ac.createBuffer(1, ac.sampleRate * 0.4, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const filter = ac.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(200, ac.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(2500, ac.currentTime + 0.2);
+        filter.frequency.exponentialRampToValueAtTime(600, ac.currentTime + 0.35);
+        filter.Q.value = 1.5;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.35 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.4);
+        src.connect(filter); filter.connect(g); g.connect(ac.destination);
+        src.start();
+        // Tonal sweep underneath - gives it direction
+        const sweep = ac.createOscillator();
+        const sg = ac.createGain();
+        sweep.type = 'sine';
+        sweep.frequency.setValueAtTime(120, ac.currentTime);
+        sweep.frequency.exponentialRampToValueAtTime(500, ac.currentTime + 0.25);
+        sg.gain.setValueAtTime(0.15 * vol(), ac.currentTime);
+        sg.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+        sweep.connect(sg); sg.connect(ac.destination);
+        sweep.start(); sweep.stop(ac.currentTime + 0.35);
+    },
+
+    homingB() {
+        // Punchy sub thump into filtered whoosh - snappier attack, heavier bottom end
+        const ac = ctx();
+        // Hard sub thump (short, punchy)
+        const sub = ac.createOscillator();
+        const gs = ac.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(50, ac.currentTime);
+        sub.frequency.exponentialRampToValueAtTime(20, ac.currentTime + 0.12);
+        gs.gain.setValueAtTime(0.55 * vol(), ac.currentTime);
+        gs.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.15);
+        sub.connect(gs); gs.connect(ac.destination);
+        sub.start(); sub.stop(ac.currentTime + 0.2);
+        // Mid whoosh - lowpass noise sweep
+        const buf = ac.createBuffer(1, ac.sampleRate * 0.35, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const filter = ac.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(300, ac.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(3000, ac.currentTime + 0.12);
+        filter.frequency.exponentialRampToValueAtTime(500, ac.currentTime + 0.3);
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.001, ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.35 * vol(), ac.currentTime + 0.04);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
+        src.connect(filter); filter.connect(g); g.connect(ac.destination);
+        src.start();
+        // Bass body - triangle wave for warmth
+        const bass = ac.createOscillator();
+        const bg = ac.createGain();
+        bass.type = 'triangle';
+        bass.frequency.setValueAtTime(70, ac.currentTime);
+        bass.frequency.exponentialRampToValueAtTime(150, ac.currentTime + 0.15);
+        bass.frequency.exponentialRampToValueAtTime(60, ac.currentTime + 0.3);
+        bg.gain.setValueAtTime(0.25 * vol(), ac.currentTime);
+        bg.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.35);
+        bass.connect(bg); bg.connect(ac.destination);
+        bass.start(); bass.stop(ac.currentTime + 0.4);
+    },
+
+    homingC() {
+        // Tight bass pulse with airy swoosh - cleaner, more spacey
+        const ac = ctx();
+        // Tight bass pulse
+        const sub = ac.createOscillator();
+        const gs = ac.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(60, ac.currentTime);
+        sub.frequency.exponentialRampToValueAtTime(35, ac.currentTime + 0.1);
+        gs.gain.setValueAtTime(0.45 * vol(), ac.currentTime);
+        gs.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.18);
+        sub.connect(gs); gs.connect(ac.destination);
+        sub.start(); sub.stop(ac.currentTime + 0.22);
+        // Airy swoosh - highpass noise with quick sweep
+        const buf = ac.createBuffer(1, ac.sampleRate * 0.3, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const filter = ac.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(800, ac.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(4000, ac.currentTime + 0.1);
+        filter.frequency.exponentialRampToValueAtTime(1200, ac.currentTime + 0.25);
+        filter.Q.value = 0.8;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.001, ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.25 * vol(), ac.currentTime + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.28);
+        src.connect(filter); filter.connect(g); g.connect(ac.destination);
+        src.start();
+        // Subtle sine swoop for tonal anchor
+        const sweep = ac.createOscillator();
+        const sg = ac.createGain();
+        sweep.type = 'sine';
+        sweep.frequency.setValueAtTime(200, ac.currentTime);
+        sweep.frequency.exponentialRampToValueAtTime(600, ac.currentTime + 0.15);
+        sweep.frequency.exponentialRampToValueAtTime(300, ac.currentTime + 0.25);
+        sg.gain.setValueAtTime(0.1 * vol(), ac.currentTime);
+        sg.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.28);
+        sweep.connect(sg); sg.connect(ac.destination);
+        sweep.start(); sweep.stop(ac.currentTime + 0.3);
+    },
+
+    hit() {
+        // Crunchy impact - noise burst + low thud
+        noise(0.08, 0.35, 1500, 'bandpass');
+        tone(80, 'sine', 0.005, 0.1, 0.3);
+    },
+
+    kill() {
+        // Meaty crunch into triumphant rising chord - should feel like "hell yeah"
+        const ac = ctx();
+        // Initial impact crunch - wide noise burst
+        noise(0.1, 0.4, 1800, 'bandpass');
+        // Sub bass punch for weight
+        const sub = ac.createOscillator();
+        const gs = ac.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(70, ac.currentTime);
+        sub.frequency.exponentialRampToValueAtTime(35, ac.currentTime + 0.15);
+        gs.gain.setValueAtTime(0.4 * vol(), ac.currentTime);
+        gs.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.2);
+        sub.connect(gs); gs.connect(ac.destination);
+        sub.start(); sub.stop(ac.currentTime + 0.25);
+        // Rising triumphant chord - staggered for a sweep feel
+        setTimeout(() => {
+            tone(500, 'sine', 0.01, 0.25, 0.2);      // root
+            tone(500, 'triangle', 0.01, 0.25, 0.08);  // harmonic layer
+        }, 60);
+        setTimeout(() => {
+            tone(630, 'sine', 0.01, 0.25, 0.18);      // major third
+        }, 120);
+        setTimeout(() => {
+            tone(750, 'sine', 0.01, 0.3, 0.16);       // fifth
+            tone(1000, 'sine', 0.01, 0.2, 0.08);      // octave shimmer
+        }, 180);
+        // High sparkle on top
+        setTimeout(() => tone(1500, 'sine', 0.005, 0.15, 0.06), 220);
+    },
+
+    death() {
+        // Gut-punch impact into heavy descending drone - should feel like the floor drops out
+        const ac = ctx();
+        // Massive sub hit
+        const sub = ac.createOscillator();
+        const gs = ac.createGain();
+        sub.type = 'sine';
+        sub.frequency.setValueAtTime(60, ac.currentTime);
+        sub.frequency.exponentialRampToValueAtTime(18, ac.currentTime + 0.8);
+        gs.gain.setValueAtTime(0.5 * vol(), ac.currentTime);
+        gs.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.9);
+        sub.connect(gs); gs.connect(ac.destination);
+        sub.start(); sub.stop(ac.currentTime + 1.0);
+        // Distorted descending saw - the "life draining away" tone
+        const osc = ac.createOscillator();
+        const dist = ac.createWaveShaperFunction ? null : null;
+        const g = ac.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(30, ac.currentTime + 0.9);
+        g.gain.setValueAtTime(0.3 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 1.0);
+        // Waveshaper for gritty distortion
+        const shaper = ac.createWaveShaper();
+        const curve = new Float32Array(256);
+        for (let i = 0; i < 256; i++) {
+            const x = (i / 128) - 1;
+            curve[i] = Math.tanh(x * 3);
+        }
+        shaper.curve = curve;
+        osc.connect(shaper); shaper.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 1.1);
+        // Heavy noise crunch at the start
+        noise(0.25, 0.35, 600, 'lowpass');
+        // Trailing debris rattle
+        setTimeout(() => noise(0.3, 0.12, 2500, 'bandpass'), 200);
+    },
+
+    boost() {
+        // Whoosh - filtered noise sweep
+        const ac = ctx();
+        const buf = ac.createBuffer(1, ac.sampleRate * 0.3, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const filter = ac.createBiquadFilter();
+        filter.type = 'bandpass';
+        filter.frequency.setValueAtTime(500, ac.currentTime);
+        filter.frequency.exponentialRampToValueAtTime(3000, ac.currentTime + 0.1);
+        filter.frequency.exponentialRampToValueAtTime(800, ac.currentTime + 0.25);
+        filter.Q.value = 2;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.3 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+        src.connect(filter); filter.connect(g); g.connect(ac.destination);
+        src.start();
+    },
+
+    mineDrop() {
+        // Metallic clank + low thud
+        tone(800, 'square', 0.005, 0.04, 0.15);
+        tone(100, 'sine', 0.01, 0.15, 0.25);
+        noise(0.05, 0.1, 3000, 'highpass');
+    },
+
+    mineExplode() {
+        // Heavy explosion - layered noise + sine thump
+        const ac = ctx();
+        // Low boom
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(80, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(20, ac.currentTime + 0.4);
+        g.gain.setValueAtTime(0.5 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.5);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.55);
+        // Crackle
+        noise(0.3, 0.4, 1200, 'lowpass');
+        // High debris
+        setTimeout(() => noise(0.15, 0.15, 4000, 'highpass'), 50);
+    },
+
+    // ------ PICKUPS ------
+
+    orbPickup() {
+        // Barely-there soft tick - ambient, won't annoy at high frequency
+        tone(680, 'sine', 0.003, 0.035, 0.06);
+    },
+
+    goldenPickup() {
+        // Gentle two-note chime - audible but not attention-grabbing
+        tone(800, 'sine', 0.005, 0.1, 0.1);
+        setTimeout(() => tone(1000, 'sine', 0.005, 0.12, 0.08), 70);
+    },
+
+    spikeHit() {
+        // Harsh buzz + descending tone
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(200, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(80, ac.currentTime + 0.15);
+        g.gain.setValueAtTime(0.2 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.2);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.25);
+        noise(0.08, 0.2, 1000, 'bandpass');
+    },
+
+    // ------ POWER-UPS ------
+
+    powerupPickup() {
+        // Bright ascending sweep
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(400, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(1200, ac.currentTime + 0.2);
+        g.gain.setValueAtTime(0.25 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.35);
+        // Shimmer
+        setTimeout(() => tone(1400, 'sine', 0.01, 0.15, 0.1), 100);
+    },
+
+    shieldBlock() {
+        // Metallic ping + energy dispersal
+        tone(1200, 'sine', 0.005, 0.08, 0.2);
+        tone(800, 'triangle', 0.01, 0.15, 0.15);
+        noise(0.1, 0.15, 3000, 'highpass');
+    },
+
+    powerupExpire() {
+        // Soft descending tone - "power down"
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(600, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(200, ac.currentTime + 0.25);
+        g.gain.setValueAtTime(0.15 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.35);
+    },
+
+    // ------ DISASTERS ------
+
+    disasterWarning() {
+        // Deep pulsing klaxon - smooth swelling two-tone with sub-bass weight
+        const ac = ctx();
+        const play = (offset) => {
+            // High tone - smooth fade in/out
+            const o1 = ac.createOscillator();
+            const g1 = ac.createGain();
+            o1.type = 'sawtooth';
+            o1.frequency.value = 380;
+            g1.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            g1.gain.linearRampToValueAtTime(0.18 * vol(), ac.currentTime + offset + 0.12);
+            g1.gain.setValueAtTime(0.18 * vol(), ac.currentTime + offset + 0.2);
+            g1.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.38);
+            o1.connect(g1); g1.connect(ac.destination);
+            o1.start(ac.currentTime + offset);
+            o1.stop(ac.currentTime + offset + 0.42);
+            // Low tone - crossfades in as high fades out
+            const o2 = ac.createOscillator();
+            const g2 = ac.createGain();
+            o2.type = 'sawtooth';
+            o2.frequency.value = 280;
+            g2.gain.setValueAtTime(0.001, ac.currentTime + offset + 0.3);
+            g2.gain.linearRampToValueAtTime(0.2 * vol(), ac.currentTime + offset + 0.45);
+            g2.gain.setValueAtTime(0.2 * vol(), ac.currentTime + offset + 0.55);
+            g2.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.72);
+            o2.connect(g2); g2.connect(ac.destination);
+            o2.start(ac.currentTime + offset);
+            o2.stop(ac.currentTime + offset + 0.76);
+            // Sub-bass swell - fades in gently
+            const sub = ac.createOscillator();
+            const gs = ac.createGain();
+            sub.type = 'sine';
+            sub.frequency.value = 60;
+            gs.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            gs.gain.linearRampToValueAtTime(0.2 * vol(), ac.currentTime + offset + 0.1);
+            gs.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.35);
+            sub.connect(gs); gs.connect(ac.destination);
+            sub.start(ac.currentTime + offset);
+            sub.stop(ac.currentTime + offset + 0.4);
+        };
+        play(0);
+        play(0.8);
+        play(1.6);
+    },
+
+    // --- WARNING VARIANTS (headphone-friendly) ---
+
+    warningA() {
+        // Soft sine pulse - gentle swelling throb, no harsh harmonics
+        // Uses pure sine tones that fade in/out smoothly
+        const ac = ctx();
+        const play = (offset) => {
+            // Primary tone - smooth sine swell
+            const o1 = ac.createOscillator();
+            const g1 = ac.createGain();
+            o1.type = 'sine';
+            o1.frequency.value = 340;
+            g1.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            g1.gain.linearRampToValueAtTime(0.22 * vol(), ac.currentTime + offset + 0.15);
+            g1.gain.linearRampToValueAtTime(0.22 * vol(), ac.currentTime + offset + 0.25);
+            g1.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.45);
+            o1.connect(g1); g1.connect(ac.destination);
+            o1.start(ac.currentTime + offset);
+            o1.stop(ac.currentTime + offset + 0.5);
+            // Lower octave warmth
+            const o2 = ac.createOscillator();
+            const g2 = ac.createGain();
+            o2.type = 'sine';
+            o2.frequency.value = 170;
+            g2.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            g2.gain.linearRampToValueAtTime(0.15 * vol(), ac.currentTime + offset + 0.15);
+            g2.gain.linearRampToValueAtTime(0.15 * vol(), ac.currentTime + offset + 0.25);
+            g2.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.45);
+            o2.connect(g2); g2.connect(ac.destination);
+            o2.start(ac.currentTime + offset);
+            o2.stop(ac.currentTime + offset + 0.5);
+            // Sub presence
+            const sub = ac.createOscillator();
+            const gs = ac.createGain();
+            sub.type = 'sine';
+            sub.frequency.value = 55;
+            gs.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            gs.gain.linearRampToValueAtTime(0.12 * vol(), ac.currentTime + offset + 0.1);
+            gs.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.4);
+            sub.connect(gs); gs.connect(ac.destination);
+            sub.start(ac.currentTime + offset);
+            sub.stop(ac.currentTime + offset + 0.45);
+        };
+        play(0);
+        play(0.7);
+        play(1.4);
+    },
+
+    warningB() {
+        // Low rumble swell - deep filtered noise rising and falling
+        // Feels ominous but never piercing
+        const ac = ctx();
+        const play = (offset) => {
+            // Filtered noise rumble
+            const buf = ac.createBuffer(1, ac.sampleRate * 0.7, ac.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+            const src = ac.createBufferSource();
+            src.buffer = buf;
+            const filter = ac.createBiquadFilter();
+            filter.type = 'lowpass';
+            filter.frequency.value = 140;
+            filter.Q.value = 1.5;
+            const g = ac.createGain();
+            g.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            g.gain.linearRampToValueAtTime(0.1 * vol(), ac.currentTime + offset + 0.15);
+            g.gain.linearRampToValueAtTime(0.1 * vol(), ac.currentTime + offset + 0.3);
+            g.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.5);
+            src.connect(filter); filter.connect(g); g.connect(ac.destination);
+            src.start(ac.currentTime + offset);
+            // Deep bass drone underneath
+            const sub = ac.createOscillator();
+            const gs = ac.createGain();
+            sub.type = 'sine';
+            sub.frequency.setValueAtTime(50, ac.currentTime + offset);
+            sub.frequency.linearRampToValueAtTime(70, ac.currentTime + offset + 0.3);
+            sub.frequency.linearRampToValueAtTime(45, ac.currentTime + offset + 0.55);
+            gs.gain.setValueAtTime(0.001, ac.currentTime + offset);
+            gs.gain.linearRampToValueAtTime(0.25 * vol(), ac.currentTime + offset + 0.12);
+            gs.gain.linearRampToValueAtTime(0.25 * vol(), ac.currentTime + offset + 0.35);
+            gs.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.6);
+            sub.connect(gs); gs.connect(ac.destination);
+            sub.start(ac.currentTime + offset);
+            sub.stop(ac.currentTime + offset + 0.65);
+            // Gentle triangle mid tone for clarity
+            const mid = ac.createOscillator();
+            const gm = ac.createGain();
+            mid.type = 'triangle';
+            mid.frequency.value = 220;
+            gm.gain.setValueAtTime(0.001, ac.currentTime + offset + 0.05);
+            gm.gain.linearRampToValueAtTime(0.05 * vol(), ac.currentTime + offset + 0.2);
+            gm.gain.linearRampToValueAtTime(0.001, ac.currentTime + offset + 0.4);
+            mid.connect(gm); gm.connect(ac.destination);
+            mid.start(ac.currentTime + offset);
+            mid.stop(ac.currentTime + offset + 0.45);
+        };
+        play(0);
+        play(0.75);
+        play(1.5);
+    },
+
+    warningC() {
+        // Descending chime - three-note descending pattern, repeats
+        // Musical and clear without being harsh
+        const ac = ctx();
+        const play = (offset) => {
+            const notes = [660, 520, 440]; // descending E5-C5-A4
+            notes.forEach((freq, i) => {
+                const delay = i * 0.12;
+                const o = ac.createOscillator();
+                const g = ac.createGain();
+                o.type = 'sine';
+                o.frequency.value = freq;
+                g.gain.setValueAtTime(0.001, ac.currentTime + offset + delay);
+                g.gain.linearRampToValueAtTime(0.18 * vol(), ac.currentTime + offset + delay + 0.02);
+                g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + offset + delay + 0.35);
+                o.connect(g); g.connect(ac.destination);
+                o.start(ac.currentTime + offset + delay);
+                o.stop(ac.currentTime + offset + delay + 0.4);
+                // Soft triangle layer for body
+                const t = ac.createOscillator();
+                const tg = ac.createGain();
+                t.type = 'triangle';
+                t.frequency.value = freq / 2;
+                tg.gain.setValueAtTime(0.001, ac.currentTime + offset + delay);
+                tg.gain.linearRampToValueAtTime(0.08 * vol(), ac.currentTime + offset + delay + 0.02);
+                tg.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + offset + delay + 0.3);
+                t.connect(tg); tg.connect(ac.destination);
+                t.start(ac.currentTime + offset + delay);
+                t.stop(ac.currentTime + offset + delay + 0.35);
+            });
+        };
+        play(0);
+        play(0.7);
+        play(1.4);
+    },
+
+    meteorImpact() {
+        // Thuddy impact with crackle
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(150, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(30, ac.currentTime + 0.2);
+        g.gain.setValueAtTime(0.35 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.25);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.3);
+        noise(0.15, 0.25, 600, 'lowpass');
+    },
+
+    supernovaPulse() {
+        // Deep expanding whomp
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(40, ac.currentTime + 0.5);
+        g.gain.setValueAtTime(0.35 * vol(), ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.4 * vol(), ac.currentTime + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.6);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.65);
+        // High ring
+        tone(1000, 'sine', 0.05, 0.4, 0.08);
+    },
+
+    blackHoleHum() {
+        // Ominous low drone, 2 seconds
+        const ac = ctx();
+        const osc1 = ac.createOscillator();
+        const osc2 = ac.createOscillator();
+        const g = ac.createGain();
+        osc1.type = 'sine';
+        osc1.frequency.value = 50;
+        osc2.type = 'sine';
+        osc2.frequency.value = 53; // slight detune for beating
+        g.gain.setValueAtTime(0.001, ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.25 * vol(), ac.currentTime + 0.3);
+        g.gain.setValueAtTime(0.25 * vol(), ac.currentTime + 1.5);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 2.0);
+        osc1.connect(g); osc2.connect(g); g.connect(ac.destination);
+        osc1.start(); osc2.start();
+        osc1.stop(ac.currentTime + 2.1); osc2.stop(ac.currentTime + 2.1);
+        // Add some filtered noise texture
+        noise(2.0, 0.08, 200, 'lowpass');
+    },
+
+    earthquakeRumble() {
+        // Low rumbling noise, 1.5s
+        const ac = ctx();
+        const buf = ac.createBuffer(1, ac.sampleRate * 1.5, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+        const src = ac.createBufferSource();
+        src.buffer = buf;
+        const filter = ac.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 150;
+        filter.Q.value = 3;
+        const g = ac.createGain();
+        g.gain.setValueAtTime(0.001, ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.35 * vol(), ac.currentTime + 0.2);
+        g.gain.setValueAtTime(0.35 * vol(), ac.currentTime + 1.0);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 1.5);
+        src.connect(filter); filter.connect(g); g.connect(ac.destination);
+        src.start();
+        // Sub bass
+        tone(35, 'sine', 0.1, 1.3, 0.25);
+    },
+
+    feedingFrenzy() {
+        // Cheerful ascending sparkle
+        const notes = [523, 659, 784, 1047]; // C5 E5 G5 C6
+        notes.forEach((freq, i) => {
+            setTimeout(() => tone(freq, 'sine', 0.01, 0.2, 0.18), i * 70);
+        });
+    },
+
+    // ------ UI ------
+
+    respawn() {
+        // Bright "power on" sweep
+        const ac = ctx();
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(200, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(800, ac.currentTime + 0.15);
+        g.gain.setValueAtTime(0.001, ac.currentTime);
+        g.gain.linearRampToValueAtTime(0.2 * vol(), ac.currentTime + 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.3);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 0.35);
+        setTimeout(() => tone(1000, 'sine', 0.01, 0.15, 0.12), 120);
+    },
+
+    criticalMassTick() {
+        // Short sharp beep
+        tone(1000, 'square', 0.005, 0.06, 0.15);
+    },
+
+    criticalMassExplode() {
+        // Massive explosion - layered
+        const ac = ctx();
+        // Sub boom
+        const osc = ac.createOscillator();
+        const g = ac.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(60, ac.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(15, ac.currentTime + 0.8);
+        g.gain.setValueAtTime(0.5 * vol(), ac.currentTime);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.9);
+        osc.connect(g); g.connect(ac.destination);
+        osc.start(); osc.stop(ac.currentTime + 1.0);
+        // Noise layers
+        noise(0.5, 0.4, 800, 'lowpass');
+        noise(0.3, 0.2, 2000, 'bandpass');
+        setTimeout(() => noise(0.3, 0.15, 5000, 'highpass'), 100);
+    }
+};
+
+// Volume slider display
+document.getElementById('volume').addEventListener('input', (e) => {
+    document.getElementById('vol-display').textContent = e.target.value + '%';
+    if (ambient.playing) ambient.updateVolume();
+});
+
+// ============================================================
+// Ambient Music Engine - generative, loops forever
+// Three styles to audition. All use the same Web Audio API.
+// ============================================================
+
+const ambient = {
+    playing: false,
+    style: 'dark',
+    nodes: [],
+    masterGain: null,
+    analyser: null,
+    vizFrame: null,
+
+    toggle() {
+        if (this.playing) {
+            this.stop();
+        } else {
+            this.start();
+        }
+    },
+
+    setStyle(style) {
+        document.querySelectorAll('.ambient-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById('amb-' + style).classList.add('active');
+        this.style = style;
+        if (this.playing) {
+            this.stop();
+            this.start();
+        }
+    },
+
+    updateVolume() {
+        if (this.masterGain) {
+            this.masterGain.gain.setTargetAtTime(vol() * 0.3, ctx().currentTime, 0.1);
+        }
+    },
+
+    stop() {
+        this.playing = false;
+        this._melodyRunning = false;
+        if (this._melodyTimer) {
+            clearTimeout(this._melodyTimer);
+            this._melodyTimer = null;
+        }
+        this.nodes.forEach(n => {
+            try { n.stop(); } catch(e) {}
+            try { n.disconnect(); } catch(e) {}
+        });
+        this.nodes = [];
+        if (this.masterGain) {
+            try { this.masterGain.disconnect(); } catch(e) {}
+            this.masterGain = null;
+        }
+        if (this.vizFrame) cancelAnimationFrame(this.vizFrame);
+        const btn = document.getElementById('amb-toggle');
+        btn.textContent = 'Play';
+        btn.classList.remove('active');
+        // Clear viz
+        const canvas = document.getElementById('amb-viz');
+        const vizCtx = canvas.getContext('2d');
+        vizCtx.clearRect(0, 0, canvas.width, canvas.height);
+    },
+
+    start() {
+        const ac = ctx();
+        this.playing = true;
+        const btn = document.getElementById('amb-toggle');
+        btn.textContent = 'Stop';
+        btn.classList.add('active');
+
+        // Master gain
+        this.masterGain = ac.createGain();
+        this.masterGain.gain.value = vol() * 0.3;
+
+        // Analyser for visualisation
+        this.analyser = ac.createAnalyser();
+        this.analyser.fftSize = 256;
+        this.masterGain.connect(this.analyser);
+        this.analyser.connect(ac.destination);
+
+        if (this.style === 'dark') this._darkDrift(ac);
+        else if (this.style === 'pulse') this._lowPulse(ac);
+        else if (this.style === 'cosmic') this._cosmicHum(ac);
+
+        this._startViz();
+    },
+
+    // --- Style 1: Dark Drift ---
+    // Slow evolving minor pads with filtered noise texture
+    _darkDrift(ac) {
+        const t = ac.currentTime;
+        // Pad layer - C minor chord spread across octaves
+        const padFreqs = [65.41, 77.78, 98, 130.81, 155.56]; // C2, Eb2, G2, C3, Eb3
+        padFreqs.forEach((freq, i) => {
+            const osc = ac.createOscillator();
+            osc.type = 'sine';
+            osc.frequency.value = freq;
+            // Slow detune LFO for movement
+            const lfo = ac.createOscillator();
+            const lfoGain = ac.createGain();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.05 + i * 0.02; // each voice drifts differently
+            lfoGain.gain.value = freq * 0.008; // subtle pitch wobble
+            lfo.connect(lfoGain);
+            lfoGain.connect(osc.frequency);
+            lfo.start(t);
+            // Individual gain with slow swell
+            const g = ac.createGain();
+            g.gain.setValueAtTime(0.001, t);
+            g.gain.linearRampToValueAtTime(0.12, t + 3 + i * 0.5);
+            osc.connect(g);
+            g.connect(this.masterGain);
+            osc.start(t);
+            this.nodes.push(osc, lfo);
+        });
+        // Filtered noise bed - very quiet, adds depth
+        const noiseBuf = ac.createBuffer(1, ac.sampleRate * 4, ac.sampleRate);
+        const noiseData = noiseBuf.getChannelData(0);
+        for (let i = 0; i < noiseData.length; i++) noiseData[i] = Math.random() * 2 - 1;
+        const noiseSrc = ac.createBufferSource();
+        noiseSrc.buffer = noiseBuf;
+        noiseSrc.loop = true;
+        const nf = ac.createBiquadFilter();
+        nf.type = 'bandpass';
+        nf.frequency.value = 200;
+        nf.Q.value = 0.5;
+        // Slow filter sweep
+        const nfLfo = ac.createOscillator();
+        const nfLfoG = ac.createGain();
+        nfLfo.type = 'sine';
+        nfLfo.frequency.value = 0.03;
+        nfLfoG.gain.value = 150;
+        nfLfo.connect(nfLfoG);
+        nfLfoG.connect(nf.frequency);
+        nfLfo.start(t);
+        const ng = ac.createGain();
+        ng.gain.value = 0.04;
+        noiseSrc.connect(nf);
+        nf.connect(ng);
+        ng.connect(this.masterGain);
+        noiseSrc.start(t);
+        this.nodes.push(noiseSrc, nfLfo);
+        // Sub bass pulse - very slow breathing
+        const sub = ac.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.value = 32.7; // C1
+        const subLfo = ac.createOscillator();
+        const subLfoG = ac.createGain();
+        subLfo.type = 'sine';
+        subLfo.frequency.value = 0.08; // 12.5s cycle
+        subLfoG.gain.value = 0.1;
+        subLfo.connect(subLfoG);
+        const subG = ac.createGain();
+        subG.gain.value = 0.15;
+        subLfoG.connect(subG.gain);
+        sub.connect(subG);
+        subG.connect(this.masterGain);
+        sub.start(t);
+        subLfo.start(t);
+        this.nodes.push(sub, subLfo);
+    },
+
+    // --- Style 2: Low Pulse ---
+    // Rhythmic sub-bass pulse with eerie overtones
+    _lowPulse(ac) {
+        const t = ac.currentTime;
+        // Pulsing sub bass
+        const sub = ac.createOscillator();
+        sub.type = 'sine';
+        sub.frequency.value = 40;
+        const subG = ac.createGain();
+        // Tremolo LFO for pulse feel
+        const tremolo = ac.createOscillator();
+        const tremoloG = ac.createGain();
+        tremolo.type = 'sine';
+        tremolo.frequency.value = 0.5; // 2s pulse cycle
+        tremoloG.gain.value = 0.08;
+        tremolo.connect(tremoloG);
+        subG.gain.value = 0.12;
+        tremoloG.connect(subG.gain);
+        sub.connect(subG);
+        subG.connect(this.masterGain);
+        sub.start(t);
+        tremolo.start(t);
+        this.nodes.push(sub, tremolo);
+        // Eerie fifth drone
+        const fifth = ac.createOscillator();
+        fifth.type = 'triangle';
+        fifth.frequency.value = 60; // roughly a fifth above sub
+        const fLfo = ac.createOscillator();
+        const fLfoG = ac.createGain();
+        fLfo.type = 'sine';
+        fLfo.frequency.value = 0.04;
+        fLfoG.gain.value = 3;
+        fLfo.connect(fLfoG);
+        fLfoG.connect(fifth.frequency);
+        const fG = ac.createGain();
+        fG.gain.value = 0.06;
+        fifth.connect(fG);
+        fG.connect(this.masterGain);
+        fifth.start(t);
+        fLfo.start(t);
+        this.nodes.push(fifth, fLfo);
+        // High eerie tone - barely there
+        const high = ac.createOscillator();
+        high.type = 'sine';
+        high.frequency.value = 880;
+        const hLfo = ac.createOscillator();
+        const hLfoG = ac.createGain();
+        hLfo.type = 'sine';
+        hLfo.frequency.value = 0.07;
+        hLfoG.gain.value = 40;
+        hLfo.connect(hLfoG);
+        hLfoG.connect(high.frequency);
+        const hG = ac.createGain();
+        hG.gain.setValueAtTime(0.001, t);
+        hG.gain.linearRampToValueAtTime(0.025, t + 4);
+        high.connect(hG);
+        hG.connect(this.masterGain);
+        high.start(t);
+        hLfo.start(t);
+        this.nodes.push(high, hLfo);
+        // Noise pulse synced to tremolo
+        const noiseBuf = ac.createBuffer(1, ac.sampleRate * 4, ac.sampleRate);
+        const nd = noiseBuf.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ac.createBufferSource();
+        ns.buffer = noiseBuf;
+        ns.loop = true;
+        const nfilt = ac.createBiquadFilter();
+        nfilt.type = 'lowpass';
+        nfilt.frequency.value = 120;
+        // Pulse the filter with same rate
+        const nLfo = ac.createOscillator();
+        const nLfoG = ac.createGain();
+        nLfo.type = 'sine';
+        nLfo.frequency.value = 0.5;
+        nLfoG.gain.value = 80;
+        nLfo.connect(nLfoG);
+        nLfoG.connect(nfilt.frequency);
+        const nG = ac.createGain();
+        nG.gain.value = 0.06;
+        ns.connect(nfilt);
+        nfilt.connect(nG);
+        nG.connect(this.masterGain);
+        ns.start(t);
+        nLfo.start(t);
+        this.nodes.push(ns, nLfo);
+    },
+
+    // --- Style 3: Cosmic Hum ---
+    // Shimmering harmonic series with slow phasing
+    _cosmicHum(ac) {
+        const t = ac.currentTime;
+        const baseFreq = 55; // A1
+        // Harmonic series - 6 partials with individual drift
+        for (let h = 1; h <= 6; h++) {
+            const osc = ac.createOscillator();
+            osc.type = h <= 2 ? 'sine' : 'triangle';
+            osc.frequency.value = baseFreq * h;
+            // Each partial drifts at its own rate
+            const lfo = ac.createOscillator();
+            const lfoG = ac.createGain();
+            lfo.type = 'sine';
+            lfo.frequency.value = 0.02 + h * 0.015;
+            lfoG.gain.value = baseFreq * h * 0.006;
+            lfo.connect(lfoG);
+            lfoG.connect(osc.frequency);
+            const g = ac.createGain();
+            const level = 0.12 / (h * 0.7); // higher partials quieter
+            g.gain.setValueAtTime(0.001, t);
+            g.gain.linearRampToValueAtTime(level, t + 2 + h * 0.3);
+            osc.connect(g);
+            g.connect(this.masterGain);
+            osc.start(t);
+            lfo.start(t);
+            this.nodes.push(osc, lfo);
+        }
+        // Slow shimmer - high filtered noise fading in and out
+        const noiseBuf = ac.createBuffer(1, ac.sampleRate * 4, ac.sampleRate);
+        const nd = noiseBuf.getChannelData(0);
+        for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+        const ns = ac.createBufferSource();
+        ns.buffer = noiseBuf;
+        ns.loop = true;
+        const nf = ac.createBiquadFilter();
+        nf.type = 'bandpass';
+        nf.frequency.value = 3000;
+        nf.Q.value = 2;
+        // Sweep the filter slowly
+        const nLfo = ac.createOscillator();
+        const nLfoG = ac.createGain();
+        nLfo.type = 'sine';
+        nLfo.frequency.value = 0.025;
+        nLfoG.gain.value = 2000;
+        nLfo.connect(nLfoG);
+        nLfoG.connect(nf.frequency);
+        // Amplitude LFO for breathing
+        const aLfo = ac.createOscillator();
+        const aLfoG = ac.createGain();
+        aLfo.type = 'sine';
+        aLfo.frequency.value = 0.06;
+        aLfoG.gain.value = 0.015;
+        const nG = ac.createGain();
+        nG.gain.value = 0.02;
+        aLfo.connect(aLfoG);
+        aLfoG.connect(nG.gain);
+        ns.connect(nf);
+        nf.connect(nG);
+        nG.connect(this.masterGain);
+        ns.start(t);
+        nLfo.start(t);
+        aLfo.start(t);
+        this.nodes.push(ns, nLfo, aLfo);
+
+        // --- Generative melody layer ---
+        // A minor pentatonic across octaves - sparse, drifting notes
+        // like distant signals emerging from the hum
+        const melodyNotes = [
+            220,   // A3
+            261.6, // C4
+            293.7, // D4
+            330,   // E4
+            392,   // G4
+            440,   // A4
+            523.3, // C5
+            587.3, // D5
+            659.3, // E5
+            784,   // G5
+        ];
+        this._melodyTimer = null;
+        this._melodyRunning = true;
+
+        const playNote = () => {
+            if (!this._melodyRunning || !this.playing) return;
+            const ac2 = ctx();
+            const now = ac2.currentTime;
+
+            // Pick 1-2 notes (sometimes a gentle interval)
+            const noteCount = Math.random() < 0.35 ? 2 : 1;
+            for (let n = 0; n < noteCount; n++) {
+                const freq = melodyNotes[Math.floor(Math.random() * melodyNotes.length)];
+                const delay = n * (0.3 + Math.random() * 0.4);
+                const duration = 2.5 + Math.random() * 3; // 2.5-5.5s per note
+                const peak = 0.04 + Math.random() * 0.03; // quiet, sits behind the pad
+                const fadeIn = 0.4 + Math.random() * 0.6;
+                const fadeOut = duration - fadeIn - 0.2;
+
+                const osc = ac2.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = freq;
+                // Gentle vibrato
+                const vib = ac2.createOscillator();
+                const vibG = ac2.createGain();
+                vib.type = 'sine';
+                vib.frequency.value = 3 + Math.random() * 2;
+                vibG.gain.value = freq * 0.003;
+                vib.connect(vibG);
+                vibG.connect(osc.frequency);
+
+                const g = ac2.createGain();
+                g.gain.setValueAtTime(0.001, now + delay);
+                g.gain.linearRampToValueAtTime(peak, now + delay + fadeIn);
+                g.gain.setValueAtTime(peak, now + delay + fadeIn + 0.1);
+                g.gain.linearRampToValueAtTime(0.001, now + delay + duration);
+
+                osc.connect(g);
+                g.connect(this.masterGain);
+                osc.start(now + delay);
+                osc.stop(now + delay + duration + 0.05);
+                vib.start(now + delay);
+                vib.stop(now + delay + duration + 0.05);
+            }
+
+            // Next note in 2-5 seconds (sparse, unhurried)
+            const nextDelay = 2000 + Math.random() * 3000;
+            this._melodyTimer = setTimeout(playNote, nextDelay);
+        };
+
+        // Start melody after pad has faded in
+        this._melodyTimer = setTimeout(playNote, 4000);
+    },
+
+    // Waveform visualiser
+    _startViz() {
+        const canvas = document.getElementById('amb-viz');
+        const vizCtx = canvas.getContext('2d');
+        canvas.width = canvas.offsetWidth;
+        canvas.height = canvas.offsetHeight;
+        const bufLen = this.analyser.frequencyBinCount;
+        const dataArr = new Uint8Array(bufLen);
+
+        const draw = () => {
+            if (!this.playing) return;
+            this.vizFrame = requestAnimationFrame(draw);
+            this.analyser.getByteTimeDomainData(dataArr);
+            vizCtx.fillStyle = '#0a0a15';
+            vizCtx.fillRect(0, 0, canvas.width, canvas.height);
+            vizCtx.lineWidth = 1.5;
+            vizCtx.strokeStyle = '#00ff8866';
+            vizCtx.beginPath();
+            const sliceW = canvas.width / bufLen;
+            let x = 0;
+            for (let i = 0; i < bufLen; i++) {
+                const v = dataArr[i] / 128;
+                const y = (v * canvas.height) / 2;
+                if (i === 0) vizCtx.moveTo(x, y);
+                else vizCtx.lineTo(x, y);
+                x += sliceW;
+            }
+            vizCtx.lineTo(canvas.width, canvas.height / 2);
+            vizCtx.stroke();
+        };
+        draw();
+    }
+};
+
+// Default style highlight
+document.getElementById('amb-dark').classList.add('active');
+</script>
+</body>
+</html>

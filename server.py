@@ -5,6 +5,7 @@ A competitive arena game where players control orbs, collect energy, and consume
 
 import asyncio
 import json
+import os
 import random
 import math
 import time
@@ -71,10 +72,166 @@ CRITICAL_MASS_TIMER = 30.0  # seconds before explosion
 POWERUP_COUNT = 5  # max on map at once
 POWERUP_RADIUS = 14
 POWERUP_RESPAWN_DELAY = 30.0  # seconds before replacement spawns
-POWERUP_TYPES = ["shield", "rapid_fire", "magnet", "phantom", "speed_force"]
-POWERUP_DURATIONS = {"shield": 5.0, "rapid_fire": 5.0, "magnet": 8.0, "phantom": 5.0, "speed_force": 7.0}
+POWERUP_TYPES = ["shield", "rapid_fire", "magnet", "phantom", "speed_force", "homing_missiles", "trail"]
+POWERUP_DURATIONS = {"shield": 5.0, "rapid_fire": 5.0, "magnet": 8.0, "phantom": 5.0, "speed_force": 7.0, "trail": 8.0}
+HOMING_MISSILES_AMMO = 3  # discrete shots granted on pickup
 MAGNET_RANGE = 400  # radius for magnet pull
 MAGNET_STRENGTH = 22  # speed orbs move toward player (must outpace base speed of 14)
+
+# Trail (Tron) power-up configuration
+TRAIL_SEGMENT_LIFETIME = 5.0   # seconds a placed segment persists
+TRAIL_SEGMENT_RADIUS = 8       # collision/render radius (same as energy orb)
+TRAIL_SEGMENT_INTERVAL = 0.1   # seconds between segment placements (3 ticks at 30 FPS)
+TRAIL_DAMAGE = 10              # radius damage on contact (same as projectile)
+
+# Mine configuration
+MINE_PICKUP_COUNT = 1  # only 1 on map at a time (super rare)
+MINE_PICKUP_RESPAWN_DELAY = 90.0  # 90s respawn (3x longer than power-ups)
+MINE_MAX_COUNT = 3  # max mines per player
+MINE_ARM_DELAY = 0.5
+MINE_BLAST_RADIUS = 80
+MINE_DAMAGE = 25
+MINE_PROXIMITY_TRIGGER = 60
+
+# Nitro Orb (Rally Run) challenge configuration
+RALLY_TRACK_HALF_WIDTH = 175    # px from centreline to barrier mine row
+RALLY_MINE_SPACING = 140        # px between adjacent barrier mines along edge
+RALLY_PLAYER_RADIUS = 20        # fixed orb radius throughout the run
+RALLY_PLAYER_SPEED = 16.1       # BASE_SPEED * (INITIAL_RADIUS / 10) ** SPEED_SCALING
+BARRIER_MINE_REARM_DELAY = 1.5  # seconds before a triggered barrier mine rearms
+RALLY_CHECKPOINT_SPACING = 700  # px between sequential checkpoint orbs
+RALLY_MAX_LAPS = 3              # laps per run (death ends early)
+RALLY_TRACK_WAYPOINTS = [
+    (700,  900),    # 0 - Start / Finish
+    (4300, 900),    # 1 - Turn 1 entry (end of main straight)
+    (4600, 1500),   # 2 - Turn 1 apex (sweeping right)
+    (4500, 2200),   # 3 - Sector 2 entry
+    (4100, 2700),   # 4 - Hairpin apex (tightest corner)
+    (3200, 2400),   # 5 - Hairpin exit
+    (3200, 3800),   # 6 - Back straight south
+    (1600, 4200),   # 7 - South corner
+    (700,  3600),   # 8 - Final sector entry
+    (700,  900),    # 9 - Back to Start / Finish (closed loop)
+]
+RALLY_ESCALATION_CORNERS = [1, 4, 7]   # waypoint indices of tightest corners
+
+
+def _compute_rally_layout():
+    """Pre-compute barrier mine positions and checkpoint orb centreline positions."""
+    barriers = []
+    # Segments stored for second-pass checkpoint placement: (x0, y0, ux, uy, seg_len)
+    segments = []
+
+    n = len(RALLY_TRACK_WAYPOINTS) - 1
+    for i in range(n):
+        x0, y0 = RALLY_TRACK_WAYPOINTS[i]
+        x1, y1 = RALLY_TRACK_WAYPOINTS[i + 1]
+        dx, dy = x1 - x0, y1 - y0
+        seg_len = math.sqrt(dx * dx + dy * dy)
+        if seg_len < 1:
+            continue
+        ux, uy = dx / seg_len, dy / seg_len
+        nx, ny = -uy, ux  # left-hand normal
+
+        # Barrier mines: start half a spacing in to avoid corner pile-ups
+        t = RALLY_MINE_SPACING / 2
+        while t < seg_len:
+            cx, cy = x0 + ux * t, y0 + uy * t
+            barriers.append((cx + nx * RALLY_TRACK_HALF_WIDTH, cy + ny * RALLY_TRACK_HALF_WIDTH))
+            barriers.append((cx - nx * RALLY_TRACK_HALF_WIDTH, cy - ny * RALLY_TRACK_HALF_WIDTH))
+            t += RALLY_MINE_SPACING
+
+        segments.append((x0, y0, ux, uy, seg_len))
+
+    # Post-filter: remove barrier mines that landed inside the track corridor.
+    # At corners the normal-direction offset for the inside of a bend can land
+    # much closer to an adjacent segment's centreline than RALLY_TRACK_HALF_WIDTH.
+    _MIN_MINE_CENTRELINE_DIST = RALLY_TRACK_HALF_WIDTH - 40  # px
+
+    def _min_dist_to_centreline(px: float, py: float) -> float:
+        min_d = float('inf')
+        for sx0, sy0, sux, suy, slen in segments:
+            ddx, ddy = px - sx0, py - sy0
+            proj = max(0.0, min(slen, ddx * sux + ddy * suy))
+            rx, ry = px - (sx0 + sux * proj), py - (sy0 + suy * proj)
+            d = math.sqrt(rx * rx + ry * ry)
+            if d < min_d:
+                min_d = d
+        return min_d
+
+    barriers = [
+        (mx, my) for mx, my in barriers
+        if _min_dist_to_centreline(mx, my) >= _MIN_MINE_CENTRELINE_DIST
+    ]
+
+    # Second pass: place checkpoint orbs on centreline, sliding clear of barrier mines
+    _CHECKPOINT_MIN_MINE_DIST = 100  # px - minimum clearance from any barrier mine
+    _CHECKPOINT_SLIDE_STEP = 35      # px - nudge along segment when too close
+    _CHECKPOINT_MAX_SLIDES = 4       # attempts before accepting the position anyway
+
+    checkpoints = []
+    cp_dist = 0.0
+    for x0, y0, ux, uy, seg_len in segments:
+        offset = RALLY_CHECKPOINT_SPACING - (cp_dist % RALLY_CHECKPOINT_SPACING)
+        t = offset
+        while t < seg_len:
+            cx, cy = x0 + ux * t, y0 + uy * t
+            # Slide forward along centreline if too close to any barrier mine
+            for _ in range(_CHECKPOINT_MAX_SLIDES):
+                if all(
+                    (cx - bx) ** 2 + (cy - by) ** 2 >= _CHECKPOINT_MIN_MINE_DIST ** 2
+                    for bx, by in barriers
+                ):
+                    break
+                cx += ux * _CHECKPOINT_SLIDE_STEP
+                cy += uy * _CHECKPOINT_SLIDE_STEP
+            checkpoints.append((cx, cy))
+            t += RALLY_CHECKPOINT_SPACING
+        cp_dist += seg_len
+
+    # Remove any checkpoint that lands too close to the start/finish line to
+    # avoid spawning an orb that looks like it's on the line but can't be collected
+    # before the lap completes.
+    sx, sy = RALLY_TRACK_WAYPOINTS[0]
+    _FINISH_LINE_EXCLUSION = 500  # px radius around start/finish to keep clear
+    checkpoints = [
+        (cx, cy) for cx, cy in checkpoints
+        if (cx - sx) ** 2 + (cy - sy) ** 2 >= _FINISH_LINE_EXCLUSION ** 2
+    ]
+
+    return barriers, checkpoints
+
+
+RALLY_BARRIER_POSITIONS, RALLY_CHECKPOINT_POSITIONS = _compute_rally_layout()
+
+
+def _dist_to_track(px: float, py: float) -> float:
+    """Minimum distance from a point to the nearest track segment centreline."""
+    min_dist = float('inf')
+    n = len(RALLY_TRACK_WAYPOINTS) - 1
+    for i in range(n):
+        x0, y0 = RALLY_TRACK_WAYPOINTS[i]
+        x1, y1 = RALLY_TRACK_WAYPOINTS[i + 1]
+        dx, dy = x1 - x0, y1 - y0
+        seg_sq = dx * dx + dy * dy
+        if seg_sq < 1:
+            continue
+        t = max(0.0, min(1.0, ((px - x0) * dx + (py - y0) * dy) / seg_sq))
+        cx, cy = x0 + t * dx, y0 + t * dy
+        dist = math.sqrt((px - cx) ** 2 + (py - cy) ** 2)
+        if dist < min_dist:
+            min_dist = dist
+    return min_dist
+
+
+# Homing missile configuration
+HOMING_MISSILE_SPEED = 20
+HOMING_MISSILE_INITIAL_SPEED_RATIO = 0.45  # starts at 45% of max speed
+HOMING_MISSILE_RAMP_TIME = 1.2  # seconds to reach full speed
+HOMING_MISSILE_DAMAGE = 20
+HOMING_MISSILE_LIFETIME = 5.0
+HOMING_TRACKING_STRENGTH = 0.15
+HOMING_REACQUIRE_RANGE = 400  # proximity range for continuous target re-acquisition
 
 # Respawn invincibility
 RESPAWN_INVINCIBILITY = 3.0  # seconds
@@ -87,11 +244,13 @@ KILL_FEED_DURATION = 5.0  # seconds before message expires
 WALL_COUNT = 20
 
 # ── Natural Disaster Configuration ──
-DISASTER_MIN_INTERVAL = 170.0  # ~3 minutes between disasters (minus jitter)
-DISASTER_MAX_INTERVAL = 210.0  # ~3 minutes + 10-30s jitter
+DISASTER_FIRST_MIN = 60.0      # first disaster: min delay after settle
+DISASTER_FIRST_MAX = 90.0      # first disaster: max delay after settle
+DISASTER_MIN_INTERVAL = 120.0  # ~2 minutes between subsequent disasters
+DISASTER_MAX_INTERVAL = 150.0  # ~2 minutes + 10-30s jitter
 DISASTER_WARNING_TIME = 5.0    # seconds of warning before disaster hits
 DISASTER_MIN_PLAYERS = 2       # need at least 2 players to trigger
-DISASTER_SETTLE_TIME = 60.0   # 1 min grace period after lobby first fills
+DISASTER_SETTLE_TIME = 30.0    # 30s grace period after lobby first fills
 
 # Black Hole
 BLACK_HOLE_DURATION = 30.0
@@ -200,6 +359,66 @@ class Projectile:
 
 
 @dataclass
+class HomingMissile(Projectile):
+    target_id: str = ""
+    tracking_strength: float = 0.08
+    speed: float = 14
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "owner_id": self.owner_id,
+            "x": round(self.x, 1),
+            "y": round(self.y, 1),
+            "dx": round(self.dx, 3),
+            "dy": round(self.dy, 3),
+            "radius": self.radius,
+            "color": self.color,
+            "homing": True
+        }
+
+
+@dataclass
+class Mine:
+    id: str
+    owner_id: str
+    x: float
+    y: float
+    radius: float = 20
+    color: str = "#ff6600"
+    armed_at: float = 0.0
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "owner_id": self.owner_id,
+            "x": round(self.x, 1),
+            "y": round(self.y, 1),
+            "radius": self.radius,
+            "color": self.color,
+            "armed": time.time() >= self.armed_at
+        }
+
+
+@dataclass
+class MinePickup(BaseOrb):
+    radius: float = 18
+    color: str = "#ff3300"
+
+
+@dataclass
+class MissileTurret:
+    id: str
+    x: float
+    y: float
+    active: bool = False
+    last_fired: float = 0.0
+
+    def to_dict(self):
+        return {"id": self.id, "x": self.x, "y": self.y, "active": self.active}
+
+
+@dataclass
 class Wall:
     id: str
     x: float
@@ -207,6 +426,8 @@ class Wall:
     width: float
     height: float
     color: str = "#334455"
+    hp: int = 3
+    max_hp: int = 3
 
     def to_dict(self):
         return {
@@ -215,7 +436,9 @@ class Wall:
             "y": self.y,
             "width": self.width,
             "height": self.height,
-            "color": self.color
+            "color": self.color,
+            "hp": self.hp,
+            "max_hp": self.max_hp,
         }
 
 
@@ -252,6 +475,7 @@ class Player:
     target_x: float
     target_y: float
     score: int = 0
+    peak_score: int = 0
     alive: bool = True
     # Boost tracking
     boost_cooldown_until: float = 0
@@ -265,6 +489,19 @@ class Player:
     # Power-up tracking
     active_powerup: str = ""
     powerup_until: float = 0
+    # Mine tracking
+    mines_remaining: int = 0  # how many mines can still be placed
+    mines_placed: int = 0  # how many currently on map
+    # Homing missile ammo
+    homing_missiles_remaining: int = 0
+    # Trail power-up tracking
+    trail_held: bool = False  # held but not yet activated
+    # Hall of fame: only tracks score earned while 2+ players are present
+    played_with_others: bool = False
+    peak_score_with_others: int = 0
+    trail_last_segment_time: float = 0.0
+    # Challenge mode: fixed speed override (bypasses radius-based scaling)
+    speed_override: Optional[float] = None
 
     def to_dict(self, current_time: float):
         critical_mass_active = self.critical_mass_start > 0
@@ -288,12 +525,16 @@ class Player:
             "critical_mass_active": critical_mass_active,
             "critical_mass_remaining": round(critical_mass_remaining, 1),
             "active_powerup": self.active_powerup if current_time < self.powerup_until else "",
-            "powerup_remaining": round(max(0, self.powerup_until - current_time), 1) if self.active_powerup else 0
+            "powerup_remaining": round(max(0, self.powerup_until - current_time), 1) if self.active_powerup else 0,
+            "mines_remaining": self.mines_remaining,
+            "homing_missiles_remaining": self.homing_missiles_remaining,
+            "trail_held": self.trail_held
         }
 
     def get_speed(self, current_time: float):
         # Larger players move slower, smaller players are much faster
-        base = BASE_SPEED * (INITIAL_RADIUS / self.radius) ** SPEED_SCALING
+        base = self.speed_override if self.speed_override is not None \
+            else BASE_SPEED * (INITIAL_RADIUS / self.radius) ** SPEED_SCALING
         # Apply boost multiplier if active
         if current_time < self.boost_active_until:
             return base * BOOST_SPEED_MULTIPLIER
@@ -313,7 +554,29 @@ class Player:
         return self.active_powerup == "shield" and current_time < self.powerup_until
 
 
+@dataclass
+class Spectator:
+    id: str
+    name: str
+    websocket: any
+
+
 DISASTER_TYPES = ["black_hole", "meteor_shower", "fog_of_war", "feeding_frenzy", "supernova", "earthquake"]
+
+# ── Challenge Mode Configuration ──
+TURRET_POSITIONS = [
+    (300, 300), (4700, 300), (300, 4700), (4700, 4700),    # corners (start active)
+    (2500, 150), (2500, 4850), (150, 2500), (4850, 2500),  # edge midpoints (unlock over time)
+]
+TURRET_INITIAL_ACTIVE = 4
+TURRET_FIRE_INTERVAL_START = 4.0   # seconds between shots at the start
+TURRET_FIRE_INTERVAL_MIN = 1.5     # fastest possible fire rate
+TURRET_FIRE_INTERVAL_REDUCTION = 0.3  # interval reduction per 30s elapsed
+TURRET_ACTIVATE_INTERVAL = 30.0    # new turret unlocks every N seconds
+TURRET_MISSILE_COLOR = "#ff3300"
+TURRET_MISSILE_LIFETIME = 8.0      # longer than normal - player is far away
+TURRET_MISSILE_SPEED = 18
+TURRET_MISSILE_TRACKING = 0.12
 
 
 def safe_float(value, default: float = 0.0) -> float:
@@ -444,10 +707,10 @@ class DisasterManager:
             # Lobby just became ready — start settle period
             self.lobby_ready_since = current_time
             self.timer_paused = False
-            # Schedule first disaster after settle time + random interval
+            # Schedule first disaster after settle time + shorter first interval
             self.next_disaster_time = (
                 current_time + DISASTER_SETTLE_TIME
-                + random.uniform(DISASTER_MIN_INTERVAL, DISASTER_MAX_INTERVAL)
+                + random.uniform(DISASTER_FIRST_MIN, DISASTER_FIRST_MAX)
             )
             return
 
@@ -821,12 +1084,16 @@ class DisasterManager:
 class GameState:
     def __init__(self):
         self.players: Dict[str, Player] = {}
+        self.spectators: Dict[str, Spectator] = {}
         self.energy_orbs: Dict[str, EnergyOrb] = {}
         self.spike_orbs: Dict[str, SpikeOrb] = {}
         self.golden_orbs: Dict[str, GoldenOrb] = {}
         self.walls: Dict[str, Wall] = {}
         self.projectiles: Dict[str, Projectile] = {}
         self.powerup_orbs: Dict[str, PowerUpOrb] = {}
+        self.mine_pickups: Dict[str, MinePickup] = {}
+        self.mines: Dict[str, Mine] = {}
+        self.trail_segments: list = []
         self.connections: Dict[str, any] = {}
         self.orb_counter = 0
         self.spike_counter = 0
@@ -835,6 +1102,9 @@ class GameState:
         self.projectile_counter = 0
         self.powerup_counter = 0
         self.powerup_respawn_timers: list = []  # [(respawn_time), ...]
+        self.mine_pickup_counter = 0
+        self.mine_pickup_respawn_timers: list = []
+        self.mine_counter = 0
         # Kill feed
         self.kill_feed: list = []  # [(timestamp, killer_name, victim_name), ...]
         # Leaderboard cache (updated every 1 second instead of every tick)
@@ -846,6 +1116,7 @@ class GameState:
         self._spike_orbs_cache: list = None
         self._golden_orbs_cache: list = None
         self._powerup_orbs_cache: list = None
+        self._mine_pickups_cache: list = None
         self._walls_cache: list = None
         self._walls_dirty: bool = False  # True when walls have moved and clients need an update
         self.spawn_walls()
@@ -853,6 +1124,7 @@ class GameState:
         self.spawn_spike_orbs(SPIKE_ORB_COUNT)
         self.spawn_golden_orbs(GOLDEN_ORB_COUNT)
         self.spawn_powerup_orbs(POWERUP_COUNT)
+        self.spawn_mine_pickups()
         self.disaster_manager = DisasterManager(self)
 
     def generate_color(self) -> str:
@@ -972,6 +1244,19 @@ class GameState:
             )
         self._powerup_orbs_cache = None
 
+    def spawn_mine_pickups(self):
+        """Spawn super rare mine pickup orbs."""
+        for _ in range(MINE_PICKUP_COUNT):
+            self.mine_pickup_counter += 1
+            pickup_id = f"mine_pickup_{self.mine_pickup_counter}"
+            x, y = self.find_safe_spawn()
+            self.mine_pickups[pickup_id] = MinePickup(
+                id=pickup_id,
+                x=x,
+                y=y
+            )
+        self._mine_pickups_cache = None
+
     def spawn_walls(self):
         """Spawn obstacle walls around the map."""
         wall_configs = [
@@ -1052,6 +1337,12 @@ class GameState:
         player.boost_cooldown_until = current_time + BOOST_COOLDOWN
         player.radius -= BOOST_MASS_COST
 
+        # Deploy trail if held
+        if player.trail_held:
+            player.trail_held = False
+            player.active_powerup = "trail"
+            player.powerup_until = current_time + POWERUP_DURATIONS["trail"]
+
     def shoot(self, player_id: str, target_x: float, target_y: float):
         """Fire a projectile from a player toward a target position."""
         if player_id not in self.players:
@@ -1065,6 +1356,7 @@ class GameState:
             return
 
         has_rapid_fire = player.active_powerup == "rapid_fire" and current_time < player.powerup_until
+        has_homing = player.homing_missiles_remaining > 0
 
         if not has_rapid_fire and current_time < player.shoot_cooldown_until:
             return
@@ -1080,25 +1372,73 @@ class GameState:
         ndx = dx / distance
         ndy = dy / distance
 
-        # Cost mass (free with rapid fire)
-        if not has_rapid_fire:
+        # Cost mass (free with rapid fire/homing)
+        if has_homing:
+            # Homing missiles: no mass cost, normal cooldown, consume ammo
+            player.shoot_cooldown_until = current_time + PROJECTILE_COOLDOWN
+            player.homing_missiles_remaining -= 1
+        elif not has_rapid_fire:
             player.radius -= PROJECTILE_COST
             player.shoot_cooldown_until = current_time + PROJECTILE_COOLDOWN
 
         # Spawn projectile at player's edge
         self.projectile_counter += 1
         proj_id = f"proj_{self.projectile_counter}"
-        self.projectiles[proj_id] = Projectile(
-            id=proj_id,
+
+        if has_homing:
+            # Fire in aimed direction - missile will proximity-acquire targets in flight
+            self.projectiles[proj_id] = HomingMissile(
+                id=proj_id,
+                owner_id=player_id,
+                x=player.x + ndx * (player.radius + 10),
+                y=player.y + ndy * (player.radius + 10),
+                dx=ndx,
+                dy=ndy,
+                color="#ffaa00",
+                created_at=current_time,
+                lifetime=HOMING_MISSILE_LIFETIME,
+                radius=8,
+                target_id="",
+                speed=HOMING_MISSILE_SPEED,
+                tracking_strength=HOMING_TRACKING_STRENGTH
+            )
+        else:
+            # Normal projectile
+            self.projectiles[proj_id] = Projectile(
+                id=proj_id,
+                owner_id=player_id,
+                x=player.x + ndx * (player.radius + PROJECTILE_RADIUS + 2),
+                y=player.y + ndy * (player.radius + PROJECTILE_RADIUS + 2),
+                dx=ndx,
+                dy=ndy,
+                color=player.color,
+                created_at=current_time,
+                lifetime=PROJECTILE_RAPID_FIRE_LIFETIME if has_rapid_fire else PROJECTILE_LIFETIME
+            )
+
+    def place_mine(self, player_id: str):
+        """Place a mine at the player's current position."""
+        if player_id not in self.players:
+            return
+        player = self.players[player_id]
+
+        if not player.alive or player.mines_remaining <= 0:
+            return
+        if player.mines_placed >= MINE_MAX_COUNT:
+            return
+
+        self.mine_counter += 1
+        mine_id = f"mine_{self.mine_counter}"
+        self.mines[mine_id] = Mine(
+            id=mine_id,
             owner_id=player_id,
-            x=player.x + ndx * (player.radius + PROJECTILE_RADIUS + 2),
-            y=player.y + ndy * (player.radius + PROJECTILE_RADIUS + 2),
-            dx=ndx,
-            dy=ndy,
-            color=player.color,
-            created_at=current_time,
-            lifetime=PROJECTILE_RAPID_FIRE_LIFETIME if has_rapid_fire else PROJECTILE_LIFETIME
+            x=player.x,
+            y=player.y,
+            armed_at=time.time() + MINE_ARM_DELAY,
+            color=player.color
         )
+        player.mines_remaining -= 1
+        player.mines_placed += 1
 
     def add_player(self, player_id: str, name: str, websocket) -> Player:
         """Add a new player to the game."""
@@ -1118,6 +1458,10 @@ class GameState:
         )
         self.players[player_id] = player
         self.connections[player_id] = websocket
+        # Mark hall of fame eligibility: once 2+ players are present, flag all of them
+        if len(self.players) >= 2:
+            for p in self.players.values():
+                p.played_with_others = True
         return player
 
     def find_safe_spawn(self) -> tuple:
@@ -1140,9 +1484,30 @@ class GameState:
     def remove_player(self, player_id: str):
         """Remove a player from the game."""
         if player_id in self.players:
+            player = self.players[player_id]
+            if player.peak_score_with_others > 0:
+                record_alltime_score(player.name, player.peak_score_with_others)
             del self.players[player_id]
         if player_id in self.connections:
             del self.connections[player_id]
+
+    def add_spectator(self, spectator_id: str, name: str, websocket) -> Spectator:
+        """Add a new spectator to the game."""
+        spectator = Spectator(
+            id=spectator_id,
+            name=sanitize_name(name),
+            websocket=websocket
+        )
+        self.spectators[spectator_id] = spectator
+        self.connections[spectator_id] = websocket
+        return spectator
+
+    def remove_spectator(self, spectator_id: str):
+        """Remove a spectator from the game."""
+        if spectator_id in self.spectators:
+            del self.spectators[spectator_id]
+        if spectator_id in self.connections:
+            del self.connections[spectator_id]
 
     def update_player_target(self, player_id: str, target_x: float, target_y: float):
         """Update where a player is moving towards."""
@@ -1168,6 +1533,7 @@ class GameState:
             player.critical_mass_start = 0
             player.active_powerup = ""
             player.powerup_until = 0
+            player.trail_held = False
 
     def _move_players(self, current_time: float):
         """Move players towards targets, handle bounds and wall collisions, apply shrink."""
@@ -1322,8 +1688,15 @@ class GameState:
                 combined = player.radius + orb.radius
                 if dx * dx + dy * dy < combined * combined:
                     powerup_type = random.choice(POWERUP_TYPES)
-                    player.active_powerup = powerup_type
-                    player.powerup_until = current_time + POWERUP_DURATIONS[powerup_type]
+                    if powerup_type == "homing_missiles":
+                        player.homing_missiles_remaining = HOMING_MISSILES_AMMO
+                    elif powerup_type == "trail":
+                        # Held item - only grant if not already holding one
+                        if not player.trail_held:
+                            player.trail_held = True
+                    else:
+                        player.active_powerup = powerup_type
+                        player.powerup_until = current_time + POWERUP_DURATIONS[powerup_type]
                     powerups_to_remove.append(orb_id)
                     break
         if powerups_to_remove:
@@ -1339,6 +1712,37 @@ class GameState:
             if respawns:
                 self.powerup_respawn_timers = [t for t in self.powerup_respawn_timers if current_time < t]
                 self.spawn_powerup_orbs(len(respawns))
+
+    def _collect_mine_pickups(self, current_time: float):
+        """Collect mine pickup orbs (super rare)."""
+        pickups_to_remove = []
+        for pickup_id, pickup in self.mine_pickups.items():
+            for player in self.players.values():
+                if not player.alive:
+                    continue
+                dx = player.x - pickup.x
+                dy = player.y - pickup.y
+                combined = player.radius + pickup.radius
+                if dx * dx + dy * dy < combined * combined:
+                    if player.mines_remaining >= MINE_MAX_COUNT:
+                        continue  # already full, skip pickup
+                    player.mines_remaining = min(player.mines_remaining + 1, MINE_MAX_COUNT)
+                    pickups_to_remove.append(pickup_id)
+                    break
+        if pickups_to_remove:
+            for pickup_id in pickups_to_remove:
+                del self.mine_pickups[pickup_id]
+            self._mine_pickups_cache = None
+            for _ in pickups_to_remove:
+                self.mine_pickup_respawn_timers.append(current_time + MINE_PICKUP_RESPAWN_DELAY)
+
+    def _process_mine_pickup_respawns(self, current_time: float):
+        """Respawn mine pickups after delay."""
+        if self.mine_pickup_respawn_timers:
+            respawns = [t for t in self.mine_pickup_respawn_timers if current_time >= t]
+            if respawns:
+                self.mine_pickup_respawn_timers = [t for t in self.mine_pickup_respawn_timers if current_time < t]
+                self.spawn_mine_pickups()
 
     def _consume_player(self, consumer, victim):
         """One player consumes another."""
@@ -1383,8 +1787,61 @@ class GameState:
         """Move projectiles and handle wall/player hit detection."""
         projectiles_to_remove = []
         for proj_id, proj in self.projectiles.items():
-            proj.x += proj.dx * PROJECTILE_SPEED
-            proj.y += proj.dy * PROJECTILE_SPEED
+            # Homing tracking - continuous proximity-based re-acquisition
+            if isinstance(proj, HomingMissile):
+                # Check if current target is still valid
+                target = self.players.get(proj.target_id) if proj.target_id else None
+                if target and (not target.alive or target.has_protection(current_time)):
+                    target = None
+                    proj.target_id = ""
+
+                # Re-acquire nearest enemy if no valid target
+                if not target:
+                    nearest = None
+                    min_dist_sq = HOMING_REACQUIRE_RANGE * HOMING_REACQUIRE_RANGE
+                    for p in self.players.values():
+                        if not p.alive or p.id == proj.owner_id or p.has_protection(current_time):
+                            continue
+                        pdx = p.x - proj.x
+                        pdy = p.y - proj.y
+                        d_sq = pdx * pdx + pdy * pdy
+                        if d_sq < min_dist_sq:
+                            # Check line-of-sight (walls block lock-on)
+                            if not self._line_blocked_by_wall(proj.x, proj.y, p.x, p.y):
+                                min_dist_sq = d_sq
+                                nearest = p
+                    if nearest:
+                        proj.target_id = nearest.id
+                        target = nearest
+
+                # Steer toward target
+                if target:
+                    # Check line-of-sight is still clear
+                    if self._line_blocked_by_wall(proj.x, proj.y, target.x, target.y):
+                        proj.target_id = ""
+                    else:
+                        dx = target.x - proj.x
+                        dy = target.y - proj.y
+                        dist = math.sqrt(dx * dx + dy * dy)
+                        if dist > 1:
+                            target_dx = dx / dist
+                            target_dy = dy / dist
+                            proj.dx += (target_dx - proj.dx) * proj.tracking_strength
+                            proj.dy += (target_dy - proj.dy) * proj.tracking_strength
+                            mag = math.sqrt(proj.dx * proj.dx + proj.dy * proj.dy)
+                            if mag > 0:
+                                proj.dx /= mag
+                                proj.dy /= mag
+
+            # Move projectile (homing uses acceleration ramp)
+            if isinstance(proj, HomingMissile):
+                age = current_time - proj.created_at
+                ramp = min(1.0, HOMING_MISSILE_INITIAL_SPEED_RATIO + (1.0 - HOMING_MISSILE_INITIAL_SPEED_RATIO) * (age / HOMING_MISSILE_RAMP_TIME))
+                speed = proj.speed * ramp
+            else:
+                speed = PROJECTILE_SPEED
+            proj.x += proj.dx * speed
+            proj.y += proj.dy * speed
 
             if current_time - proj.created_at > proj.lifetime:
                 projectiles_to_remove.append(proj_id)
@@ -1403,6 +1860,33 @@ class GameState:
         for proj_id in projectiles_to_remove:
             if proj_id in self.projectiles:
                 del self.projectiles[proj_id]
+
+    def _line_blocked_by_wall(self, x1: float, y1: float, x2: float, y2: float) -> bool:
+        """Check if a line segment from (x1,y1) to (x2,y2) intersects any wall (Liang-Barsky)."""
+        dx = x2 - x1
+        dy = y2 - y1
+        for wall in self.walls.values():
+            p = [-dx, dx, -dy, dy]
+            q = [x1 - wall.x, wall.x + wall.width - x1, y1 - wall.y, wall.y + wall.height - y1]
+            t_min, t_max = 0.0, 1.0
+            valid = True
+            for i in range(4):
+                if p[i] == 0:
+                    if q[i] < 0:
+                        valid = False
+                        break
+                else:
+                    t = q[i] / p[i]
+                    if p[i] < 0:
+                        t_min = max(t_min, t)
+                    else:
+                        t_max = min(t_max, t)
+                    if t_min > t_max:
+                        valid = False
+                        break
+            if valid:
+                return True
+        return False
 
     def _projectile_hit_wall(self, proj) -> bool:
         for wall in self.walls.values():
@@ -1423,7 +1907,8 @@ class GameState:
             dy = player.y - proj.y
             combined = player.radius + proj.radius
             if dx * dx + dy * dy < combined * combined:
-                player.radius = max(MIN_RADIUS, player.radius - PROJECTILE_DAMAGE)
+                damage = HOMING_MISSILE_DAMAGE if isinstance(proj, HomingMissile) else PROJECTILE_DAMAGE
+                player.radius = max(MIN_RADIUS, player.radius - damage)
                 if player.radius <= MIN_RADIUS:
                     shooter = self.players.get(proj.owner_id)
                     if shooter and shooter.alive and shooter.radius > player.radius * CONSUME_RATIO:
@@ -1433,6 +1918,56 @@ class GameState:
                         self.add_kill(shooter.name, player.name)
                 return True
         return False
+
+    def _update_mines(self, current_time: float):
+        """Update mine state and check for proximity triggers."""
+        mines_to_remove = []
+        for mine_id, mine in self.mines.items():
+            if current_time < mine.armed_at:
+                continue
+
+            for player in self.players.values():
+                if not player.alive or player.id == mine.owner_id:
+                    continue
+                dx = player.x - mine.x
+                dy = player.y - mine.y
+                dist_sq = dx * dx + dy * dy
+
+                if dist_sq < MINE_PROXIMITY_TRIGGER * MINE_PROXIMITY_TRIGGER:
+                    self._detonate_mine(mine, current_time)
+                    mines_to_remove.append(mine_id)
+                    break
+
+        for mine_id in mines_to_remove:
+            owner_id = self.mines[mine_id].owner_id
+            del self.mines[mine_id]
+            if owner_id in self.players:
+                self.players[owner_id].mines_placed -= 1
+
+    def _detonate_mine(self, mine: Mine, current_time: float):
+        """Detonate a mine, damaging nearby players."""
+        for player in self.players.values():
+            if not player.alive or player.has_protection(current_time):
+                continue
+            dx = player.x - mine.x
+            dy = player.y - mine.y
+            dist = math.sqrt(dx * dx + dy * dy)
+
+            if dist < MINE_BLAST_RADIUS:
+                damage_factor = 1.0 - (dist / MINE_BLAST_RADIUS) * 0.5
+                player.radius = max(MIN_RADIUS, player.radius - MINE_DAMAGE * damage_factor)
+
+                if dist > 0:
+                    knockback = 40 * damage_factor
+                    player.x += (dx / dist) * knockback
+                    player.y += (dy / dist) * knockback
+
+                if player.radius <= MIN_RADIUS:
+                    player.alive = False
+                    player.score = 0
+                    owner = self.players.get(mine.owner_id)
+                    if owner:
+                        self.add_kill(owner.name, player.name)
 
     def _update_critical_mass(self, current_time: float):
         """Handle critical mass timer and explosion."""
@@ -1486,16 +2021,69 @@ class GameState:
         if magnet_golden_moved:
             self._golden_orbs_cache = None
 
+    def _update_trail_segments(self, current_time: float):
+        """Place new trail segments for active trail players, expire old ones, check collisions."""
+        # Place new segments for players with active trail power-up
+        for player in self.players.values():
+            if not player.alive:
+                continue
+            if player.active_powerup != "trail" or current_time >= player.powerup_until:
+                continue
+            if current_time - player.trail_last_segment_time >= TRAIL_SEGMENT_INTERVAL:
+                self.trail_segments.append({
+                    "x": player.x,
+                    "y": player.y,
+                    "owner_id": player.id,
+                    "color": player.color,
+                    "expires_at": current_time + TRAIL_SEGMENT_LIFETIME,
+                })
+                player.trail_last_segment_time = current_time
+
+        # Expire old segments and check collisions
+        segments_to_remove = []
+        for i, seg in enumerate(self.trail_segments):
+            if current_time >= seg["expires_at"]:
+                segments_to_remove.append(i)
+                continue
+            for player in self.players.values():
+                if not player.alive or player.id == seg["owner_id"] or player.has_protection(current_time):
+                    continue
+                dx = player.x - seg["x"]
+                dy = player.y - seg["y"]
+                combined = player.radius + TRAIL_SEGMENT_RADIUS
+                if dx * dx + dy * dy < combined * combined:
+                    player.radius = max(MIN_RADIUS, player.radius - TRAIL_DAMAGE)
+                    if player.radius <= MIN_RADIUS:
+                        player.alive = False
+                        player.score = 0
+                        owner = self.players.get(seg["owner_id"])
+                        if owner:
+                            self.add_kill(owner.name, player.name)
+                    segments_to_remove.append(i)
+                    break
+
+        for i in reversed(sorted(set(segments_to_remove))):
+            self.trail_segments.pop(i)
+
     def tick(self):
         """Update game state for one tick."""
         current_time = time.time()
         self._move_players(current_time)
         self._check_orb_collisions(current_time)
+        self._collect_mine_pickups(current_time)
+        self._process_mine_pickup_respawns(current_time)
         self._check_player_collisions(current_time)
         self._update_projectiles(current_time)
+        self._update_mines(current_time)
         self._update_critical_mass(current_time)
         self._update_powerups(current_time)
+        self._update_trail_segments(current_time)
         self.disaster_manager.tick(current_time)
+        for player in self.players.values():
+            if player.score > player.peak_score:
+                player.peak_score = player.score
+            if player.played_with_others and player.score > player.peak_score_with_others:
+                player.peak_score_with_others = player.score
 
     def get_static_data(self) -> dict:
         """Get static data that only needs to be sent once (on welcome)."""
@@ -1517,6 +2105,8 @@ class GameState:
             self._golden_orbs_cache = [o.to_dict() for o in self.golden_orbs.values()]
         if self._powerup_orbs_cache is None:
             self._powerup_orbs_cache = [o.to_dict() for o in self.powerup_orbs.values()]
+        if self._mine_pickups_cache is None:
+            self._mine_pickups_cache = [o.to_dict() for o in self.mine_pickups.values()]
 
         state = {
             "type": "state",
@@ -1525,7 +2115,11 @@ class GameState:
             "spike_orbs": self._spike_orbs_cache,
             "golden_orbs": self._golden_orbs_cache,
             "powerup_orbs": self._powerup_orbs_cache,
+            "mine_pickups": self._mine_pickups_cache,
+            "mines": [m.to_dict() for m in self.mines.values()],
             "projectiles": [p.to_dict() for p in self.projectiles.values()],
+            "trail_segments": [{"x": round(s["x"], 1), "y": round(s["y"], 1), "color": s["color"],
+                                 "ttl": round(s["expires_at"] - current_time, 2)} for s in self.trail_segments],
             "kill_feed": self.get_kill_feed(),
             "leaderboard": self.get_leaderboard(),
             "disaster": self.disaster_manager.get_state(current_time)
@@ -1555,9 +2149,530 @@ class GameState:
         return self._cached_leaderboard
 
 
+class ChallengeGame(GameState):
+    """Isolated single-player challenge game instance."""
+
+    def __init__(self, player_id: str):
+        super().__init__()
+        self.player_id = player_id
+        self.challenge_start_time = time.time()
+        self.turrets = [
+            MissileTurret(
+                id=f"turret_{i}",
+                x=float(x),
+                y=float(y),
+                active=(i < TURRET_INITIAL_ACTIVE),
+                # Stagger first shots so all turrets don't fire simultaneously
+                last_fired=self.challenge_start_time - random.uniform(0.0, 2.0),
+            )
+            for i, (x, y) in enumerate(TURRET_POSITIONS)
+        ]
+        self._current_fire_interval = TURRET_FIRE_INTERVAL_START
+        self._wall_respawns: list = []   # list of (respawn_time, width, height)
+        self._wall_respawn_counter: int = 0
+
+    def get_elapsed(self) -> float:
+        return time.time() - self.challenge_start_time
+
+    def get_wave(self) -> int:
+        return 1 + int(self.get_elapsed() / TURRET_ACTIVATE_INTERVAL)
+
+    def tick(self):
+        super().tick()
+        current_time = time.time()
+        elapsed = self.get_elapsed()
+        self._update_turret_difficulty(elapsed)
+        self._fire_turret_missiles(current_time)
+        self._check_projectile_collisions()
+        self._update_wall_respawns(current_time)
+
+    def _update_turret_difficulty(self, elapsed: float):
+        turrets_active = min(len(self.turrets), TURRET_INITIAL_ACTIVE + int(elapsed / TURRET_ACTIVATE_INTERVAL))
+        for i, turret in enumerate(self.turrets):
+            turret.active = i < turrets_active
+        reduction = min(
+            TURRET_FIRE_INTERVAL_START - TURRET_FIRE_INTERVAL_MIN,
+            (elapsed / TURRET_ACTIVATE_INTERVAL) * TURRET_FIRE_INTERVAL_REDUCTION
+        )
+        self._current_fire_interval = TURRET_FIRE_INTERVAL_START - reduction
+
+    def _fire_turret_missiles(self, current_time: float):
+        player = self.players.get(self.player_id)
+        if not player or not player.alive:
+            return
+        for turret in self.turrets:
+            if not turret.active:
+                continue
+            if current_time - turret.last_fired >= self._current_fire_interval:
+                turret.last_fired = current_time
+                self._spawn_turret_missile(turret, player, current_time)
+
+    def _spawn_turret_missile(self, turret: MissileTurret, player: Player, current_time: float):
+        dx = player.x - turret.x
+        dy = player.y - turret.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist < 1:
+            return
+        ndx, ndy = dx / dist, dy / dist
+        self.projectile_counter += 1
+        proj_id = f"tmissile_{self.projectile_counter}"
+        self.projectiles[proj_id] = HomingMissile(
+            id=proj_id,
+            owner_id=turret.id,
+            x=turret.x + ndx * 30,
+            y=turret.y + ndy * 30,
+            dx=ndx,
+            dy=ndy,
+            color=TURRET_MISSILE_COLOR,
+            created_at=current_time,
+            lifetime=TURRET_MISSILE_LIFETIME,
+            radius=8,
+            target_id=player.id,
+            speed=TURRET_MISSILE_SPEED,
+            tracking_strength=TURRET_MISSILE_TRACKING,
+        )
+
+    def _check_projectile_collisions(self):
+        """Player-fired projectiles can destroy incoming turret missiles."""
+        player_projs = {pid: p for pid, p in self.projectiles.items()
+                        if p.owner_id == self.player_id}
+        turret_missiles = {pid: p for pid, p in self.projectiles.items()
+                           if p.owner_id.startswith("turret_")}
+        to_remove = set()
+        for ppid, pp in player_projs.items():
+            if ppid in to_remove:
+                continue
+            for tmid, tm in turret_missiles.items():
+                if tmid in to_remove:
+                    continue
+                dx = pp.x - tm.x
+                dy = pp.y - tm.y
+                combined = pp.radius + tm.radius
+                if dx * dx + dy * dy < combined * combined:
+                    to_remove.add(ppid)
+                    to_remove.add(tmid)
+                    break
+        for proj_id in to_remove:
+            if proj_id in self.projectiles:
+                del self.projectiles[proj_id]
+
+    def _projectile_hit_wall(self, proj) -> bool:
+        """Override: turret missiles damage walls (3 hits to destroy). Player shots pass through walls."""
+        if not proj.owner_id.startswith("turret_"):
+            return False
+        for wall_id, wall in list(self.walls.items()):
+            closest_x = max(wall.x, min(proj.x, wall.x + wall.width))
+            closest_y = max(wall.y, min(proj.y, wall.y + wall.height))
+            dist_x = proj.x - closest_x
+            dist_y = proj.y - closest_y
+            if math.sqrt(dist_x * dist_x + dist_y * dist_y) < proj.radius:
+                wall.hp -= 1
+                if wall.hp <= 0:
+                    del self.walls[wall_id]
+                    self._wall_respawns.append((time.time() + 10.0, wall.width, wall.height))
+                self._walls_cache = None
+                self._walls_dirty = True
+                return True
+        return False
+
+    def _update_wall_respawns(self, current_time: float):
+        """Respawn destroyed walls as single rectangles at random positions."""
+        remaining = []
+        spawned = False
+        for respawn_time, width, height in self._wall_respawns:
+            if current_time >= respawn_time:
+                x = random.uniform(200, WORLD_WIDTH - 200 - width)
+                y = random.uniform(200, WORLD_HEIGHT - 200 - height)
+                self._wall_respawn_counter += 1
+                wall_id = f"wall_r{self._wall_respawn_counter}"
+                self.walls[wall_id] = Wall(id=wall_id, x=x, y=y, width=width, height=height, hp=3, max_hp=3)
+                spawned = True
+            else:
+                remaining.append((respawn_time, width, height))
+        self._wall_respawns = remaining
+        if spawned:
+            self._walls_cache = None
+            self._walls_dirty = True
+
+    def _projectile_hit_player(self, proj, current_time: float) -> bool:
+        """Override: turret missiles kill the player when they drop to MIN_RADIUS."""
+        for player in self.players.values():
+            if not player.alive or player.id == proj.owner_id or player.has_protection(current_time):
+                continue
+            dx = player.x - proj.x
+            dy = player.y - proj.y
+            combined = player.radius + proj.radius
+            if dx * dx + dy * dy < combined * combined:
+                damage = HOMING_MISSILE_DAMAGE if isinstance(proj, HomingMissile) else PROJECTILE_DAMAGE
+                player.radius = max(MIN_RADIUS, player.radius - damage)
+                if player.radius <= MIN_RADIUS:
+                    if proj.owner_id.startswith("turret_"):
+                        player.alive = False
+                        player.score = 0
+                        self.add_kill("Turret", player.name)
+                    else:
+                        shooter = self.players.get(proj.owner_id)
+                        if shooter and shooter.alive and shooter.radius > player.radius * CONSUME_RATIO:
+                            player.alive = False
+                            shooter.score += KILL_BASE_SCORE + int(player.score * KILL_SCORE_RATIO)
+                            player.score = 0
+                            self.add_kill(shooter.name, player.name)
+                return True
+        return False
+
+
+class RallyRunGame(GameState):
+    """Isolated single-player Nitro Orb rally challenge."""
+
+    def __init__(self, player_id: str):
+        super().__init__()
+        self.player_id = player_id
+        self.challenge_start_time = time.time()
+        # Lap tracking
+        self.lap_count = 0
+        self.lap_start_time: Optional[float] = None   # resets each lap for HUD display
+        self.run_start_time: Optional[float] = None   # set on first gate, never reset
+        self.final_time: Optional[float] = None       # set only when all laps complete
+        self.checkpoint_index = 0
+        self.total_checkpoints = len(RALLY_CHECKPOINT_POSITIONS)
+        self._escalation_mine_counter = 0
+        self.decorative_turrets: list = []
+        self.countdown_end = time.time() + 3.0
+        # Clear normal world populated by parent __init__
+        self.energy_orbs.clear()
+        self.spike_orbs.clear()
+        self.golden_orbs.clear()
+        self.powerup_orbs.clear()
+        self.mine_pickups.clear()
+        self.walls.clear()
+        self._energy_orbs_cache = []
+        self._spike_orbs_cache = []
+        self._powerup_orbs_cache = []
+        self._mine_pickups_cache = []
+        self._walls_cache = []
+        self._walls_dirty = False
+        # Build track
+        self._spawn_barrier_mines()
+        self._spawn_checkpoint_orbs()
+        self._spawn_decorative_elements()
+
+    def _spawn_barrier_mines(self):
+        for i, (x, y) in enumerate(RALLY_BARRIER_POSITIONS):
+            mine_id = f"barrier_{i}"
+            self.mines[mine_id] = Mine(
+                id=mine_id, owner_id="barrier",
+                x=x, y=y, armed_at=0.0, color="#cc2200", radius=15,
+            )
+
+    def _spawn_checkpoint_orbs(self):
+        i = self.checkpoint_index
+        if i >= self.total_checkpoints:
+            return
+        x, y = RALLY_CHECKPOINT_POSITIONS[i]
+        orb_id = f"checkpoint_{i}"
+        self.golden_counter += 1
+        self.golden_orbs[orb_id] = GoldenOrb(id=orb_id, x=x, y=y)
+        self._golden_orbs_cache = None
+
+    def _find_off_track_pos(self, margin: float = 80) -> Optional[tuple]:
+        """Find a random world position safely outside the track barriers."""
+        min_clear = RALLY_TRACK_HALF_WIDTH + margin
+        for _ in range(40):
+            x = random.uniform(150, WORLD_WIDTH - 150)
+            y = random.uniform(150, WORLD_HEIGHT - 150)
+            if _dist_to_track(x, y) > min_clear:
+                return (x, y)
+        return None
+
+    def _spawn_decorative_elements(self):
+        """Scatter game elements in non-track areas for visual richness."""
+        # Energy orbs
+        for _ in range(60):
+            pos = self._find_off_track_pos(margin=60)
+            if pos:
+                self.orb_counter += 1
+                oid = f"orb_{self.orb_counter}"
+                self.energy_orbs[oid] = EnergyOrb(id=oid, x=pos[0], y=pos[1])
+        self._energy_orbs_cache = None
+
+        # Spike orbs
+        for _ in range(20):
+            pos = self._find_off_track_pos(margin=60)
+            if pos:
+                self.spike_counter += 1
+                sid = f"spike_{self.spike_counter}"
+                self.spike_orbs[sid] = SpikeOrb(id=sid, x=pos[0], y=pos[1])
+        self._spike_orbs_cache = None
+
+        # Obstacle walls (infield / outfield)
+        wall_specs = [(200, 40), (40, 200), (160, 30), (30, 160), (120, 120), (240, 30)]
+        for w, h in wall_specs:
+            pos = self._find_off_track_pos(margin=max(w, h) + 80)
+            if pos:
+                self.wall_counter += 1
+                wid = f"wall_d{self.wall_counter}"
+                self.walls[wid] = Wall(
+                    id=wid, x=pos[0] - w / 2, y=pos[1] - h / 2,
+                    width=w, height=h, hp=3, max_hp=3,
+                )
+        self._walls_cache = None
+        self._walls_dirty = True
+
+        # Decorative (inactive) turret emplacements
+        turret_candidates = [
+            (2100, 1600),   # upper infield
+            (2600, 2900),   # centre infield
+            (1300, 2700),   # left infield
+            (300,  300),    # far top-left corner
+            (4750, 4750),   # far bottom-right corner
+        ]
+        for i, (tx, ty) in enumerate(turret_candidates):
+            if _dist_to_track(tx, ty) > RALLY_TRACK_HALF_WIDTH + 150:
+                self.decorative_turrets.append(
+                    MissileTurret(id=f"deco_{i}", x=float(tx), y=float(ty), active=False)
+                )
+
+    def _collect_energy_orbs(self):
+        """Override: decorative only - no collection or respawn."""
+        pass
+
+    def _collect_spike_orbs(self, current_time: float):
+        """Override: decorative only - no damage or respawn."""
+        pass
+
+    def activate_boost(self, player_id: str):
+        """Override: no cooldown, no mass cost - boost any time."""
+        player = self.players.get(player_id)
+        if not player or not player.alive:
+            return
+        player.boost_active_until = time.time() + BOOST_DURATION
+        player.boost_cooldown_until = 0  # immediately available again
+
+    def add_rally_player(self, player_id: str, name: str, websocket) -> "Player":
+        player = self.add_player(player_id, name, websocket)
+        player.radius = RALLY_PLAYER_RADIUS
+        player.speed_override = RALLY_PLAYER_SPEED
+        sx, sy = RALLY_TRACK_WAYPOINTS[0]
+        player.x, player.y = float(sx), float(sy)
+        player.target_x, player.target_y = float(sx), float(sy)
+        return player
+
+    def tick(self):
+        player = self.players.get(self.player_id)
+        if player and time.time() < self.countdown_end:
+            sx, sy = RALLY_TRACK_WAYPOINTS[0]
+            player.target_x = float(sx)
+            player.target_y = float(sy)
+        super().tick()
+        player = self.players.get(self.player_id)
+        if player and player.alive:
+            player.radius = RALLY_PLAYER_RADIUS  # lock size: no shrink, no growth
+            self._check_checkpoints(player)
+
+    def _check_checkpoints(self, player):
+        orb_id = f"checkpoint_{self.checkpoint_index}"
+        orb = self.golden_orbs.get(orb_id)
+        if not orb:
+            return
+        dx, dy = player.x - orb.x, player.y - orb.y
+        collect_sq = (player.radius + orb.radius + 10) ** 2
+        if dx * dx + dy * dy < collect_sq:
+            del self.golden_orbs[orb_id]
+            self._golden_orbs_cache = None
+            self.checkpoint_index += 1
+            # Start timers on first gate of the very first lap
+            if self.checkpoint_index == 1 and self.run_start_time is None:
+                now = time.time()
+                self.run_start_time = now
+                self.lap_start_time = now
+            if self.checkpoint_index >= self.total_checkpoints:
+                self._complete_lap()
+            else:
+                self._spawn_checkpoint_orbs()
+
+    def _complete_lap(self):
+        now = time.time()
+        self.lap_count += 1
+        if self.lap_count >= RALLY_MAX_LAPS:
+            # All laps done - capture exact finish time, don't reset for another lap
+            if self.run_start_time is not None:
+                self.final_time = round(now - self.run_start_time, 2)
+            return
+        self.lap_start_time = now
+        self.checkpoint_index = 0
+        self._spawn_checkpoint_orbs()
+        if self.lap_count <= 5:
+            self._add_escalation_mines()
+
+    def _add_escalation_mines(self):
+        """Progressively narrow tight corners after each lap."""
+        inner_dist = max(100, RALLY_TRACK_HALF_WIDTH - self.lap_count * 15)
+        for corner_idx in RALLY_ESCALATION_CORNERS:
+            x, y = RALLY_TRACK_WAYPOINTS[corner_idx]
+            prev_x, prev_y = RALLY_TRACK_WAYPOINTS[corner_idx - 1]
+            dx, dy = x - prev_x, y - prev_y
+            seg_len = math.sqrt(dx * dx + dy * dy)
+            if seg_len < 1:
+                continue
+            ux, uy = dx / seg_len, dy / seg_len
+            nx, ny = -uy, ux
+            for k in range(3):
+                t = seg_len - RALLY_MINE_SPACING * (k + 0.5)
+                if t < 0:
+                    continue
+                mx, my = prev_x + ux * t, prev_y + uy * t
+                for side in [1, -1]:
+                    self._escalation_mine_counter += 1
+                    mine_id = f"esc_{self._escalation_mine_counter}"
+                    self.mines[mine_id] = Mine(
+                        id=mine_id, owner_id="barrier",
+                        x=mx + nx * inner_dist * side,
+                        y=my + ny * inner_dist * side,
+                        armed_at=0.0, color="#990000", radius=15,
+                    )
+
+    def _collect_golden_orbs(self):
+        """Override: checkpoint orbs give no mass/score - handled by _check_checkpoints."""
+        pass
+
+    def _update_trail_segments(self, current_time: float):
+        """Override: visual-only trail always active for the rally player - no collision damage."""
+        player = self.players.get(self.player_id)
+        if player and player.alive:
+            if current_time - player.trail_last_segment_time >= TRAIL_SEGMENT_INTERVAL:
+                self.trail_segments.append({
+                    "x": player.x,
+                    "y": player.y,
+                    "owner_id": player.id,
+                    "color": player.color,
+                    "expires_at": current_time + TRAIL_SEGMENT_LIFETIME,
+                })
+                player.trail_last_segment_time = current_time
+        self.trail_segments = [s for s in self.trail_segments if current_time < s["expires_at"]]
+
+    def _update_mines(self, current_time: float):
+        """Override: barrier mines rearm after triggering instead of being removed."""
+        for mine in self.mines.values():
+            if current_time < mine.armed_at:
+                continue
+            player = self.players.get(self.player_id)
+            if not player or not player.alive:
+                continue
+            dx, dy = player.x - mine.x, player.y - mine.y
+            if dx * dx + dy * dy < MINE_PROXIMITY_TRIGGER * MINE_PROXIMITY_TRIGGER:
+                self._detonate_mine(mine, current_time)
+                mine.armed_at = current_time + BARRIER_MINE_REARM_DELAY
+
+    def get_rally_state(self) -> dict:
+        now = time.time()
+        lap_time = round(now - self.lap_start_time, 1) if self.lap_start_time is not None else None
+        total_time = round(now - self.run_start_time, 1) if self.run_start_time is not None else None
+        return {
+            "type": "rally_run",
+            "lap": min(self.lap_count + 1, RALLY_MAX_LAPS),
+            "max_laps": RALLY_MAX_LAPS,
+            "lap_time": lap_time,
+            "total_time": total_time,
+            "checkpoint": self.checkpoint_index,
+            "total_checkpoints": self.total_checkpoints,
+            "countdown": round(max(0.0, self.countdown_end - now), 2),
+        }
+
+    def is_run_complete(self) -> bool:
+        return self.lap_count >= RALLY_MAX_LAPS
+
+
 # Global game state
 game = GameState()
 
+SCORES_PATH = "/data/scores.json"
+
+# Persistent leaderboards (loaded from SCORES_PATH on startup)
+missile_magnet_scores: list = []
+rally_run_scores: list = []
+all_time_scores: list = []
+
+
+def load_scores():
+    global missile_magnet_scores, rally_run_scores, all_time_scores
+    try:
+        if os.path.exists(SCORES_PATH):
+            with open(SCORES_PATH, "r") as f:
+                data = json.load(f)
+            missile_magnet_scores = data.get("missile_magnet", [])[:10]
+            rally_run_scores = data.get("rally_run", [])[:10]
+            all_time_scores = data.get("all_time", [])[:10]
+            print(f"Scores loaded from {SCORES_PATH}")
+        else:
+            print(f"No scores file at {SCORES_PATH} - starting fresh")
+    except Exception as e:
+        print(f"Could not load scores: {e}")
+
+
+def save_scores():
+    try:
+        os.makedirs(os.path.dirname(SCORES_PATH), exist_ok=True)
+        with open(SCORES_PATH, "w") as f:
+            json.dump({
+                "missile_magnet": missile_magnet_scores,
+                "rally_run": rally_run_scores,
+                "all_time": all_time_scores,
+            }, f, indent=2)
+    except Exception as e:
+        print(f"Could not save scores: {e}")
+
+
+def record_challenge_score(name: str, time_survived: float) -> int:
+    """Record survival time, personal best only, keep top 10 sorted, return 1-indexed rank."""
+    global missile_magnet_scores
+    existing = next((s for s in missile_magnet_scores if s["name"] == name), None)
+    if existing and existing["time"] >= time_survived:
+        return next((i + 1 for i, s in enumerate(missile_magnet_scores) if s["name"] == name), len(missile_magnet_scores))
+    missile_magnet_scores = [s for s in missile_magnet_scores if s["name"] != name]
+    entry = {"name": name, "time": time_survived}
+    missile_magnet_scores.append(entry)
+    missile_magnet_scores.sort(key=lambda s: s["time"], reverse=True)
+    missile_magnet_scores = missile_magnet_scores[:10]
+    save_scores()
+    for i, s in enumerate(missile_magnet_scores):
+        if s is entry:
+            return i + 1
+    return len(missile_magnet_scores)
+
+
+def record_rally_score(name: str, best_lap: float) -> int:
+    """Record best lap time, personal best only, keep top 10 ascending, return 1-indexed rank."""
+    global rally_run_scores
+    existing = next((s for s in rally_run_scores if s["name"] == name), None)
+    if existing and existing["time"] <= best_lap:
+        return next((i + 1 for i, s in enumerate(rally_run_scores) if s["name"] == name), len(rally_run_scores))
+    rally_run_scores = [s for s in rally_run_scores if s["name"] != name]
+    entry = {"name": name, "time": best_lap}
+    rally_run_scores.append(entry)
+    rally_run_scores.sort(key=lambda s: s["time"])  # lowest lap time = best
+    rally_run_scores = rally_run_scores[:10]
+    save_scores()
+    for i, s in enumerate(rally_run_scores):
+        if s is entry:
+            return i + 1
+    return len(rally_run_scores)
+
+
+def record_alltime_score(name: str, score: int):
+    """Record a multiplayer peak score, keep top 10 descending. Only updates if new score beats personal best."""
+    global all_time_scores
+    existing = next((s for s in all_time_scores if s["name"] == name), None)
+    if existing and existing["score"] >= score:
+        return
+    all_time_scores = [s for s in all_time_scores if s["name"] != name]
+    all_time_scores.append({"name": name, "score": score})
+    all_time_scores.sort(key=lambda s: s["score"], reverse=True)
+    all_time_scores = all_time_scores[:10]
+    save_scores()
+
+
+# Load persisted scores on startup
+load_scores()
 
 SEND_TIMEOUT = 0.5  # seconds - drop slow clients to prevent buffer buildup
 
@@ -1571,7 +2686,10 @@ active_connections = 0
 async def broadcast_state():
     """Broadcast game state to all connected players."""
     while True:
-        game.tick()
+        try:
+            game.tick()
+        except Exception as e:
+            print(f"Error in game tick: {e}")
         current_time = time.time()
 
         # Build shared state once and serialize to JSON once
@@ -1581,34 +2699,149 @@ async def broadcast_state():
         # Remove trailing '}' so we can append ',"you":...}'
         shared_json_prefix = shared_json[:-1] + ',"you":'
 
-        # Send state to each player (only serialize their 'you' portion)
+        # Send state to each player and spectator
         disconnected = []
-        for player_id, websocket in list(game.connections.items()):
-            player = game.players.get(player_id)
-            if not player:
-                continue
+        for client_id, websocket in list(game.connections.items()):
             try:
-                you_json = json.dumps(player.to_dict(current_time))
-                message = shared_json_prefix + you_json + '}'
+                # Check if this is a spectator or player
+                if client_id in game.spectators:
+                    # Spectators get state without "you" field
+                    message = shared_json
+                else:
+                    # Players get state with their "you" field
+                    player = game.players.get(client_id)
+                    if not player:
+                        continue
+                    you_json = json.dumps(player.to_dict(current_time))
+                    message = shared_json_prefix + you_json + '}'
+
                 await asyncio.wait_for(
                     websocket.send(message),
                     timeout=SEND_TIMEOUT
                 )
             except asyncio.TimeoutError:
-                print(f"Player {player_id} send timeout - dropping connection")
-                disconnected.append(player_id)
+                print(f"Client {client_id} send timeout - dropping connection")
+                disconnected.append(client_id)
             except ConnectionClosed:
-                disconnected.append(player_id)
+                disconnected.append(client_id)
             except Exception as e:
-                print(f"Error sending to {player_id}: {e}")
-                disconnected.append(player_id)
+                print(f"Error sending to {client_id}: {e}")
+                disconnected.append(client_id)
 
-        # Clean up disconnected players
-        for player_id in disconnected:
-            game.remove_player(player_id)
-            print(f"Player {player_id} disconnected")
+        # Clean up disconnected clients
+        for client_id in disconnected:
+            if client_id in game.spectators:
+                game.remove_spectator(client_id)
+                print(f"Spectator {client_id} disconnected")
+            else:
+                game.remove_player(client_id)
+                print(f"Player {client_id} disconnected")
 
         await asyncio.sleep(TICK_RATE)
+
+
+async def run_challenge_loop(player_id: str, challenge_game: ChallengeGame, websocket):
+    """Tick a solo challenge game and send state to the player each frame."""
+    try:
+        while True:
+            try:
+                challenge_game.tick()
+            except Exception as e:
+                print(f"Challenge tick error: {e}")
+
+            current_time = time.time()
+            player = challenge_game.players.get(player_id)
+            if not player:
+                break
+
+            elapsed = challenge_game.get_elapsed()
+            shared_state = challenge_game.build_shared_state(current_time)
+            shared_state["challenge"] = {
+                "time_survived": round(elapsed, 1),
+                "wave": challenge_game.get_wave(),
+                "active_turrets": [t.id for t in challenge_game.turrets if t.active],
+                "fire_interval": round(challenge_game._current_fire_interval, 2),
+            }
+
+            if not player.alive:
+                time_survived = round(elapsed, 1)
+                rank = record_challenge_score(player.name, time_survived)
+                shared_state["type"] = "challenge_result"
+                shared_state["challenge"]["rank"] = rank
+                shared_state["challenge"]["total"] = len(missile_magnet_scores)
+                shared_state["challenge"]["top_scores"] = missile_magnet_scores[:5]
+                try:
+                    await asyncio.wait_for(websocket.send(json.dumps(shared_state)), timeout=SEND_TIMEOUT)
+                except Exception:
+                    pass
+                break
+
+            you_json = json.dumps(player.to_dict(current_time))
+            shared_json = json.dumps(shared_state)
+            message = shared_json[:-1] + ',"you":' + you_json + '}'
+            try:
+                await asyncio.wait_for(websocket.send(message), timeout=SEND_TIMEOUT)
+            except (asyncio.TimeoutError, ConnectionClosed):
+                break
+            except Exception as e:
+                print(f"Challenge send error: {e}")
+                break
+
+            await asyncio.sleep(TICK_RATE)
+    except asyncio.CancelledError:
+        pass
+
+
+async def run_rally_loop(player_id: str, rally_game: RallyRunGame, websocket):
+    """Tick a solo Nitro Orb rally game and send state to the player each frame."""
+    try:
+        while True:
+            try:
+                rally_game.tick()
+            except Exception as e:
+                print(f"Rally tick error: {e}")
+
+            current_time = time.time()
+            player = rally_game.players.get(player_id)
+            if not player:
+                break
+
+            shared_state = rally_game.build_shared_state(current_time)
+            shared_state["challenge"] = rally_game.get_rally_state()
+
+            run_over = not player.alive or rally_game.is_run_complete()
+            if run_over:
+                rank = None
+                # Only post a score if all 3 laps were completed - DNF gets nothing
+                if rally_game.is_run_complete() and rally_game.final_time is not None:
+                    rank = record_rally_score(player.name, rally_game.final_time)
+                shared_state["type"] = "challenge_result"
+                shared_state["challenge"]["rank"] = rank
+                shared_state["challenge"]["total"] = len(rally_run_scores)
+                shared_state["challenge"]["top_scores"] = rally_run_scores[:5]
+                shared_state["challenge"]["laps_completed"] = rally_game.lap_count
+                shared_state["challenge"]["final_time"] = rally_game.final_time
+                shared_state["challenge"]["is_complete"] = rally_game.is_run_complete()
+                try:
+                    await asyncio.wait_for(websocket.send(json.dumps(shared_state)), timeout=SEND_TIMEOUT)
+                except Exception:
+                    pass
+                break
+
+            you_json = json.dumps(player.to_dict(current_time))
+            shared_json = json.dumps(shared_state)
+            message = shared_json[:-1] + ',"you":' + you_json + '}'
+            try:
+                await asyncio.wait_for(websocket.send(message), timeout=SEND_TIMEOUT)
+            except (asyncio.TimeoutError, ConnectionClosed):
+                break
+            except Exception as e:
+                print(f"Rally send error: {e}")
+                break
+
+            await asyncio.sleep(TICK_RATE)
+    except asyncio.CancelledError:
+        pass
 
 
 async def handle_client(websocket):
@@ -1634,67 +2867,163 @@ async def handle_client(websocket):
         if data.get("type") == "join":
             player_id = f"player_{id(websocket)}"
             name = sanitize_name(str(data.get("name", "Anonymous")))
-            player = game.add_player(player_id, name, websocket)
+            mode = data.get("mode", "player")  # "player" or "spectate"
 
-            # Send welcome message with static data
-            welcome_data = {
-                "type": "welcome",
-                "player_id": player_id,
-                "player": player.to_dict(time.time())
-            }
-            welcome_data.update(game.get_static_data())
-            await websocket.send(json.dumps(welcome_data))
+            if mode == "spectate":
+                # Send welcome message before adding to connections
+                # (avoids race with broadcast loop sending state concurrently)
+                welcome_data = {
+                    "type": "welcome",
+                    "player_id": player_id,
+                    "mode": "spectate"
+                }
+                welcome_data.update(game.get_static_data())
+                await websocket.send(json.dumps(welcome_data))
 
-            print(f"Player {name} ({player_id}) joined!")
+                # Now add to game so broadcast loop can send state
+                spectator = game.add_spectator(player_id, name, websocket)
+                print(f"Spectator {name} ({player_id}) joined!")
+            elif mode == "challenge":
+                # Solo challenge mode - isolated game instance per player
+                challenge_name = data.get("challenge", "missile_magnet")
 
-            # Handle messages from this client
-            async for message in websocket:
-                # Rate limiting
-                now = time.time()
-                if now - window_start >= RATE_LIMIT_WINDOW:
-                    msg_count = 0
-                    window_start = now
-                msg_count += 1
-                if msg_count > RATE_LIMIT_MAX_MSGS:
-                    continue  # Silently drop excess messages
-
+                if challenge_name == "rally_run":
+                    challenge_game = RallyRunGame(player_id)
+                    player = challenge_game.add_rally_player(player_id, name, websocket)
+                    welcome_data = {
+                        "type": "welcome",
+                        "player_id": player_id,
+                        "mode": "challenge",
+                        "challenge": "rally_run",
+                        "player": player.to_dict(time.time()),
+                        "track_waypoints": list(RALLY_TRACK_WAYPOINTS),
+                        "total_checkpoints": challenge_game.total_checkpoints,
+                        "turrets": [t.to_dict() for t in challenge_game.decorative_turrets],
+                    }
+                    welcome_data.update(challenge_game.get_static_data())
+                    await websocket.send(json.dumps(welcome_data))
+                    print(f"Challenge player {name} ({player_id}) started Nitro Orb!")
+                    tick_task = asyncio.create_task(run_rally_loop(player_id, challenge_game, websocket))
+                else:
+                    challenge_game = ChallengeGame(player_id)
+                    player = challenge_game.add_player(player_id, name, websocket)
+                    welcome_data = {
+                        "type": "welcome",
+                        "player_id": player_id,
+                        "mode": "challenge",
+                        "challenge": challenge_name,
+                        "player": player.to_dict(time.time()),
+                        "turrets": [t.to_dict() for t in challenge_game.turrets],
+                    }
+                    welcome_data.update(challenge_game.get_static_data())
+                    await websocket.send(json.dumps(welcome_data))
+                    print(f"Challenge player {name} ({player_id}) started {challenge_name}!")
+                    tick_task = asyncio.create_task(run_challenge_loop(player_id, challenge_game, websocket))
                 try:
-                    data = json.loads(message)
-                    msg_type = data.get("type")
+                    async for message in websocket:
+                        now = time.time()
+                        if now - window_start >= RATE_LIMIT_WINDOW:
+                            msg_count = 0
+                            window_start = now
+                        msg_count += 1
+                        if msg_count > RATE_LIMIT_MAX_MSGS:
+                            continue
+                        try:
+                            data = json.loads(message)
+                            msg_type = data.get("type")
+                            if msg_type == "move":
+                                challenge_game.update_player_target(
+                                    player_id,
+                                    safe_float(data.get("x", 0)),
+                                    safe_float(data.get("y", 0))
+                                )
+                            elif msg_type == "boost":
+                                challenge_game.activate_boost(player_id)
+                            elif msg_type == "shoot":
+                                challenge_game.shoot(
+                                    player_id,
+                                    safe_float(data.get("x", 0)),
+                                    safe_float(data.get("y", 0))
+                                )
+                            elif msg_type == "place_mine":
+                                challenge_game.place_mine(player_id)
+                        except (json.JSONDecodeError, TypeError, ValueError, KeyError):
+                            pass
+                finally:
+                    tick_task.cancel()
 
-                    if msg_type == "move":
-                        game.update_player_target(
-                            player_id,
-                            safe_float(data.get("x", 0)),
-                            safe_float(data.get("y", 0))
-                        )
+            else:
+                # Add as player
+                player = game.add_player(player_id, name, websocket)
 
-                    elif msg_type == "boost":
-                        game.activate_boost(player_id)
+                # Send welcome message with static data
+                welcome_data = {
+                    "type": "welcome",
+                    "player_id": player_id,
+                    "player": player.to_dict(time.time())
+                }
+                welcome_data.update(game.get_static_data())
+                await websocket.send(json.dumps(welcome_data))
 
-                    elif msg_type == "shoot":
-                        game.shoot(
-                            player_id,
-                            safe_float(data.get("x", 0)),
-                            safe_float(data.get("y", 0))
-                        )
+                print(f"Player {name} ({player_id}) joined!")
 
-                    elif msg_type == "respawn":
-                        game.respawn_player(player_id)
+            # Handle messages from this client (multiplayer only - challenge has its own loop above)
+            if mode not in ("challenge",):
+                async for message in websocket:
+                    # Rate limiting
+                    now = time.time()
+                    if now - window_start >= RATE_LIMIT_WINDOW:
+                        msg_count = 0
+                        window_start = now
+                    msg_count += 1
+                    if msg_count > RATE_LIMIT_MAX_MSGS:
+                        continue  # Silently drop excess messages
 
-                    elif msg_type == "test_disasters":
-                        game.disaster_manager.start_test_cycle(time.time())
+                    try:
+                        data = json.loads(message)
+                        msg_type = data.get("type")
 
-                except (json.JSONDecodeError, TypeError, ValueError, KeyError):
-                    pass  # Silently drop malformed messages
+                        if msg_type == "move":
+                            game.update_player_target(
+                                player_id,
+                                safe_float(data.get("x", 0)),
+                                safe_float(data.get("y", 0))
+                            )
+
+                        elif msg_type == "boost":
+                            game.activate_boost(player_id)
+
+                        elif msg_type == "shoot":
+                            game.shoot(
+                                player_id,
+                                safe_float(data.get("x", 0)),
+                                safe_float(data.get("y", 0))
+                            )
+
+                        elif msg_type == "place_mine":
+                            game.place_mine(player_id)
+
+                        elif msg_type == "respawn":
+                            game.respawn_player(player_id)
+
+                        elif msg_type == "test_disasters":
+                            game.disaster_manager.start_test_cycle(time.time())
+
+                    except (json.JSONDecodeError, TypeError, ValueError, KeyError):
+                        pass  # Silently drop malformed messages
 
     except ConnectionClosed:
         pass
     finally:
         active_connections -= 1
         if player_id:
-            game.remove_player(player_id)
-            print(f"Player {player_id} left")
+            # Remove player or spectator (challenge players are not in game.players)
+            if player_id in game.spectators:
+                game.remove_spectator(player_id)
+                print(f"Spectator {player_id} left")
+            elif player_id in game.players:
+                game.remove_player(player_id)
+                print(f"Player {player_id} left")
 
 
 def get_local_ip():
@@ -1716,14 +3045,59 @@ class SafeHTTPHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler that only serves the game client file."""
 
     def do_GET(self):
-        # Normalize path and only allow index.html
+        # Normalize path and only allow index.html (plus API endpoints)
         path = self.path.split("?")[0].split("#")[0]  # strip query/fragment
+        if path == "/api/challenge/scores":
+            self._serve_challenge_scores()
+            return
+        if path == "/api/rally/scores":
+            self._serve_rally_scores()
+            return
+        if path == "/api/alltime/scores":
+            self._serve_alltime_scores()
+            return
+        if path == "/api/status":
+            self._serve_status()
+            return
         if path not in ALLOWED_HTTP_FILES:
             self.send_error(404, "Not Found")
             return
         # Always serve index.html
         self.path = "/index.html"
         super().do_GET()
+
+    def _serve_challenge_scores(self):
+        data = json.dumps(missile_magnet_scores[:10]).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_rally_scores(self):
+        data = json.dumps(rally_run_scores[:10]).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_alltime_scores(self):
+        data = json.dumps(all_time_scores[:10]).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_status(self):
+        data = json.dumps({"players": len(game.players)}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(data)
 
     def do_HEAD(self):
         path = self.path.split("?")[0].split("#")[0]

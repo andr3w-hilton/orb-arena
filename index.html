@@ -3017,8 +3017,9 @@
             state.connected = false;
             state.playing = false;
             state.boss = null;
-            currentZoom = 1.0;
-            targetZoom = 1.0;
+            currentZoom = getZoomForRadius(20);
+            targetZoom = currentZoom;
+            state.challengeData = null;
             playBtn.disabled = false;
             spectateBtn.disabled = false;
             challengeBtn.disabled = false;

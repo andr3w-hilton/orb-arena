@@ -514,15 +514,18 @@
             margin-bottom: 7px;
             cursor: pointer;
             display: flex;
-            justify-content: space-between;
+            justify-content: center;
             align-items: center;
             user-select: none;
+            position: relative;
         }
         .guide-card h3::after {
             content: "\25B2";
             font-size: 0.5rem;
             opacity: 0.5;
             transition: transform 0.2s;
+            position: absolute;
+            right: 0;
         }
         .guide-card.collapsed h3::after { transform: rotate(180deg); }
         .guide-card.collapsed ul { display: none; }

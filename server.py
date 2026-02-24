@@ -83,6 +83,7 @@ TRAIL_SEGMENT_LIFETIME = 5.0   # seconds a placed segment persists
 TRAIL_SEGMENT_RADIUS = 8       # collision/render radius (same as energy orb)
 TRAIL_SEGMENT_INTERVAL = 0.1   # seconds between segment placements (3 ticks at 30 FPS)
 TRAIL_DAMAGE = 10              # radius damage on contact (same as projectile)
+TRAIL_SPEED_MULTIPLIER = 1.7   # speed boost while trail is actively laying segments
 
 # Mine configuration
 MINE_PICKUP_COUNT = 1  # only 1 on map at a time (super rare)
@@ -538,6 +539,9 @@ class Player:
         # Apply boost multiplier if active
         if current_time < self.boost_active_until:
             return base * BOOST_SPEED_MULTIPLIER
+        # Tron trail grants a speed boost while active - lean into the light-cycle fantasy
+        if self.active_powerup == "trail" and current_time < self.powerup_until:
+            return base * TRAIL_SPEED_MULTIPLIER
         return base
 
     def check_invincible(self, current_time: float):

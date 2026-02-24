@@ -1,5 +1,16 @@
 # Orb Arena - Changelog
 
+## v1.2.0 - UI Overhaul
+
+### New Look
+- The whole UI has been redesigned from the ground up - dark amber terminal aesthetic, new angular fonts, and a retro CRT feel on the menus
+- The start screen now looks the part: flickering title, glowing name field, animated background details that make it feel like booting into a weapons system
+
+### Tron Trail - Speed Boost
+- Trail orb now makes you faster while it's active - lean into the light-cycle feel, go fast and leave a wall of orbs behind you
+
+---
+
 ## v1.1.0 - Trail Blazer
 
 ### New Power-up: Tron Trail

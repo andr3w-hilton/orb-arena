@@ -630,6 +630,19 @@
             box-shadow: 0 0 30px rgba(0,200,255,0.1);
         }
 
+        /* Hunter Seeker - crimson scheme */
+        #cs-boss-hunt {
+            background: rgba(200,0,0,0.02);
+            border-color: rgba(200,0,0,0.2);
+        }
+        #cs-boss-hunt::before { border-color: var(--red); }
+        #cs-boss-hunt::after  { border-color: var(--red); }
+        #cs-boss-hunt:hover {
+            background: rgba(200,0,0,0.07);
+            border-color: rgba(200,0,0,0.5);
+            box-shadow: 0 0 30px rgba(200,0,0,0.15);
+        }
+
         .challenge-card h3 {
             font-size: 0.55rem;
             letter-spacing: 5px;
@@ -637,7 +650,8 @@
             text-transform: uppercase;
             margin-bottom: 6px;
         }
-        #cs-rally-run h3 { color: var(--cyan-dim); }
+        #cs-rally-run h3  { color: var(--cyan-dim); }
+        #cs-boss-hunt h3  { color: #aa2200; }
 
         .challenge-card .cc-title {
             font-family: 'Orbitron', sans-serif;
@@ -649,7 +663,8 @@
             margin-bottom: 14px;
             line-height: 1.1;
         }
-        #cs-rally-run .cc-title { color: var(--cyan); }
+        #cs-rally-run .cc-title  { color: var(--cyan); }
+        #cs-boss-hunt .cc-title  { color: var(--red); }
 
         .challenge-card ul {
             list-style: none; padding: 0;
@@ -658,6 +673,7 @@
         }
         .challenge-card ul li::before { content: '> '; color: var(--amber-dim); }
         #cs-rally-run ul li::before   { color: var(--cyan-dim); }
+        #cs-boss-hunt ul li::before   { color: #aa2200; }
 
         .challenge-card .cc-record {
             font-size: 0.72rem; color: #5a4a38;
@@ -679,7 +695,8 @@
             transition: opacity 0.2s;
         }
         .challenge-card:hover .cc-play { opacity: 1; }
-        #cs-rally-run .cc-play { color: var(--cyan); }
+        #cs-rally-run .cc-play  { color: var(--cyan); }
+        #cs-boss-hunt .cc-play  { color: var(--red); }
 
         .cc-directive {
             background: rgba(255, 215, 0, 0.04);
@@ -709,6 +726,8 @@
         .cc-btn-amber:hover { background: var(--amber-hi); box-shadow: 0 0 25px rgba(255,140,0,0.4); }
         .cc-btn-cyan  { color: var(--bg); background: var(--cyan);  border-color: var(--cyan); }
         .cc-btn-cyan:hover  { background: #33d4ff; box-shadow: 0 0 25px rgba(0,200,255,0.4); }
+        .cc-btn-red   { color: #fff; background: var(--red);   border-color: var(--red); }
+        .cc-btn-red:hover   { background: #ff4422; box-shadow: 0 0 25px rgba(255,34,0,0.4); }
 
         #cs-back-btn {
             margin-top: 1.8rem;
@@ -1287,6 +1306,24 @@
                 </div>
                 <button class="cc-btn cc-btn-cyan">INITIATE OPERATION</button>
             </div>
+
+            <div class="challenge-card" id="cs-boss-hunt">
+                <span class="cc-play">INITIATE ›</span>
+                <h3>// SOLO OPERATION //</h3>
+                <div class="cc-title">Hunter Seeker</div>
+                <ul>
+                    <li>An AI predator hunts you - always large enough to consume you</li>
+                    <li>Shoot it to weaken and slow it down</li>
+                    <li>It gains speed over time - survive as long as possible</li>
+                    <li>Every 90s it enters attack phase and opens fire</li>
+                    <li>Collect power-ups for shields, speed and firepower</li>
+                </ul>
+                <div class="cc-record">
+                    <span>LONGEST SURVIVAL</span>
+                    <span class="cc-record-val" id="cs-boss-hunt-score">--</span>
+                </div>
+                <button class="cc-btn cc-btn-red">INITIATE OPERATION</button>
+            </div>
         </div>
 
         <button id="cs-back-btn">ABORT MISSION</button>
@@ -1348,6 +1385,12 @@
             <div class="ch-wave" id="ch-total">Total: --</div>
             <div class="ch-wave" id="ch-cp">Gate 0 / 0</div>
             <div style="margin-top:6px;font-size:0.55rem;font-weight:700;color:#aa8800;letter-spacing:2px;">&#9888; COLLECT ALL GATES</div>
+        </div>
+        <!-- Hunter Seeker -->
+        <div id="ch-boss" style="display:none">
+            <div class="ch-time" id="ch-boss-time">0.0s</div>
+            <div class="ch-wave" id="ch-boss-status">HUNTER ACTIVE</div>
+            <div class="ch-wave" id="ch-boss-phase"></div>
         </div>
     </div>
 
@@ -1414,6 +1457,7 @@
             challengeData: null,
             welcomeTurrets: [],
             welcomeTrackWaypoints: [],
+            boss: null,
             // Rally countdown animation state
             rallyCountdownDigit: 0,
             rallyCountdownDigitTime: 0,
@@ -1982,6 +2026,7 @@
 
         const killPopups = [];
         const killRings = [];
+        const prevStrikeMap = new Map(); // id -> {x, y} for impact VFX tracking
 
         function spawnParticle(config) {
             if (particles.length >= MAX_PARTICLES) return;
@@ -2051,6 +2096,29 @@
 
         function triggerScreenShake(intensity) {
             vfxShakeIntensity = Math.max(vfxShakeIntensity, intensity);
+        }
+
+        function spawnStrikeImpact(x, y) {
+            const near = !state.you || !state.you.alive ||
+                Math.hypot(x - state.you.x, y - state.you.y) < 600;
+            if (!near) return;
+            // Splash particles
+            for (let i = 0; i < 12; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = 2 + Math.random() * 5;
+                spawnParticle({
+                    x, y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    radius: 4 + Math.random() * 6,
+                    color: Math.random() < 0.5 ? '#ff3300' : '#ff7700',
+                    life: 20 + Math.floor(Math.random() * 12),
+                });
+            }
+            // Bright flash particle
+            spawnParticle({ x, y, vx: 0, vy: 0, radius: 18, color: '#ffdd66', life: 7 });
+            sfx.meteorImpact();
+            triggerScreenShake(6);
         }
 
         function updateScreenShake() {
@@ -2410,8 +2478,15 @@
                             state.welcomeTurrets = data.turrets || [];
                             document.getElementById('ch-mm').style.display = 'none';
                             document.getElementById('ch-rally').style.display = '';
+                            document.getElementById('ch-boss').style.display = 'none';
+                        } else if (data.challenge === 'boss_hunt') {
+                            state.boss = data.boss || null;
+                            document.getElementById('ch-mm').style.display = 'none';
+                            document.getElementById('ch-rally').style.display = 'none';
+                            document.getElementById('ch-boss').style.display = '';
                         } else {
                             state.welcomeTurrets = data.turrets || [];
+                            document.getElementById('ch-boss').style.display = 'none';
                         }
                     } else {
                         // Multiplayer mode
@@ -2548,7 +2623,16 @@
             state.energyOrbs = data.energy_orbs;
             state.spikeOrbs = data.spike_orbs || [];
             state.goldenOrbs = data.golden_orbs || [];
-            state.projectiles = data.projectiles || [];
+            // Track strike barrage shots for impact VFX
+            const incomingProjs = data.projectiles || [];
+            const newStrikeIds = new Set();
+            incomingProjs.forEach(p => { if (p.owner_id === 'strike') newStrikeIds.add(p.id); });
+            prevStrikeMap.forEach((pos, id) => {
+                if (!newStrikeIds.has(id)) spawnStrikeImpact(pos.x, pos.y);
+            });
+            prevStrikeMap.clear();
+            incomingProjs.forEach(p => { if (p.owner_id === 'strike') prevStrikeMap.set(p.id, {x: p.x, y: p.y}); });
+            state.projectiles = incomingProjs;
             state.powerupOrbs = data.powerup_orbs || [];
             state.minePickups = data.mine_pickups || [];
             state.mines = data.mines || [];
@@ -2557,6 +2641,7 @@
             state.leaderboard = data.leaderboard;
             state.disaster = data.disaster || { active: null, warning: null };
             if (data.walls) state.walls = data.walls;
+            if (data.boss !== undefined) state.boss = data.boss;
 
             // Update challenge HUD if in challenge mode
             if (data.challenge) {
@@ -2582,6 +2667,20 @@
                     document.getElementById('ch-lap').textContent = `LAP ${data.challenge.lap} / ${data.challenge.max_laps}`;
                     document.getElementById('ch-total').textContent = 'Total: ' + tt;
                     document.getElementById('ch-cp').textContent = `Gate ${data.challenge.checkpoint} / ${data.challenge.total_checkpoints}`;
+                } else if (data.challenge.type === 'hunter_seeker') {
+                    document.getElementById('ch-boss-time').textContent = data.challenge.time_survived + 's';
+                    const weakened = data.challenge.boss_weakened;
+                    document.getElementById('ch-boss-status').textContent = weakened ? 'HUNTER SLOWED' : 'HUNTER ACTIVE';
+                    document.getElementById('ch-boss-status').style.color = weakened ? '#00ff88' : '#aa2200';
+                    const shooting = data.challenge.shooting_phase;
+                    const nextIn = data.challenge.next_phase_in;
+                    if (shooting) {
+                        document.getElementById('ch-boss-phase').textContent = `ATTACK PHASE: ${nextIn}s`;
+                        document.getElementById('ch-boss-phase').style.color = '#ff2200';
+                    } else {
+                        document.getElementById('ch-boss-phase').textContent = nextIn > 0 ? `ATTACK IN: ${nextIn}s` : '';
+                        document.getElementById('ch-boss-phase').style.color = '#7a6858';
+                    }
                 } else {
                     document.getElementById('ch-time').textContent = data.challenge.time_survived + 's';
                     document.getElementById('ch-wave').textContent = 'Wave ' + data.challenge.wave;
@@ -2676,8 +2775,13 @@
             sfx.death();
             const ch = data.challenge || {};
             const isRally = ch.type === 'rally_run';
+            const isBossHunt = ch.type === 'hunter_seeker';
 
-            document.getElementById('cr-title').textContent = isRally ? 'Nitro Orb' : 'Missile Magnet';
+            if (isBossHunt) {
+                document.getElementById('cr-title').textContent = 'Hunter Seeker';
+            } else {
+                document.getElementById('cr-title').textContent = isRally ? 'Nitro Orb' : 'Missile Magnet';
+            }
 
             if (isRally) {
                 const completed = ch.is_complete;
@@ -2792,6 +2896,18 @@
                     }
                 })
                 .catch(() => {});
+            // Fetch Hunter Seeker top score
+            fetch('/api/boss/scores')
+                .then(r => r.json())
+                .then(scores => {
+                    const el = document.getElementById('cs-boss-hunt-score');
+                    if (scores && scores.length > 0) {
+                        el.textContent = `${scores[0].name} — ${scores[0].time}s`;
+                    } else {
+                        el.textContent = '--';
+                    }
+                })
+                .catch(() => {});
         }
 
         function closeChallengeScreen() {
@@ -2871,6 +2987,10 @@
             challengeScreen.style.display = 'none';
             joinGame('challenge', 'rally_run');
         });
+        document.getElementById('cs-boss-hunt').addEventListener('click', () => {
+            challengeScreen.style.display = 'none';
+            joinGame('challenge', 'boss_hunt');
+        });
         nameInput.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') joinGame('player');
         });
@@ -2896,6 +3016,7 @@
             if (ws) { ws.close(); ws = null; }
             state.connected = false;
             state.playing = false;
+            state.boss = null;
             playBtn.disabled = false;
             spectateBtn.disabled = false;
             challengeBtn.disabled = false;
@@ -3568,8 +3689,15 @@
             if (!targetPlayer) return;
 
             // Update zoom (smooth lerp toward target)
-            targetZoom = getZoomForRadius(targetPlayer.radius || 20);
-            currentZoom += (targetZoom - currentZoom) * 0.08;
+            // Pull back to aerial view during precision strike danger_close + barrage
+            const strikePhase = state.challengeData && state.challengeData.strike_phase;
+            if (strikePhase === 'danger_close' || strikePhase === 'barrage') {
+                targetZoom = 0.38;
+                currentZoom += (targetZoom - currentZoom) * 0.035; // slow dramatic pull-back
+            } else {
+                targetZoom = getZoomForRadius(targetPlayer.radius || 20);
+                currentZoom += (targetZoom - currentZoom) * 0.08;
+            }
 
             // Update camera to follow target (zoom-adjusted viewport)
             const viewW = canvas.width / currentZoom;
@@ -3757,6 +3885,19 @@
                 }
             });
 
+            // Draw boss (Hunter Seeker challenge - above players)
+            if (state.challengeName === 'boss_hunt' && state.boss) {
+                drawBoss(state.boss);
+            }
+
+            // Draw precision strike targeting reticle (world-space, before zoom restore)
+            if (state.challengeName === 'boss_hunt' && state.challengeData) {
+                const sp = state.challengeData.strike_phase;
+                if (sp && state.challengeData.strike_target) {
+                    drawStrikeReticle(state.challengeData.strike_target, sp);
+                }
+            }
+
             // VFX: Kill effects (above players)
             renderKillRings();
             renderKillPopups();
@@ -3785,6 +3926,7 @@
             drawTouchIndicator();
             drawPowerUpPopup();
             drawRallyCountdown();
+            drawStrikeAlert();
 
             // Draw minimap (hide during fog of war)
             if (state.disaster && state.disaster.active === 'fog_of_war') {
@@ -4163,6 +4305,28 @@
             // Skip if off screen
             if (isOffScreen(screenX, screenY, 30)) return;
 
+            if (proj.owner_id === 'strike') {
+                // Precision strike barrage round - meteor-style
+                const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 60 + proj.x);
+                const flare = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, proj.radius * 5);
+                flare.addColorStop(0, `rgba(255,80,0,${0.5 + pulse * 0.3})`);
+                flare.addColorStop(0.4, 'rgba(255,30,0,0.25)');
+                flare.addColorStop(1, 'transparent');
+                ctx.fillStyle = flare;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, proj.radius * 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = `rgba(255,${Math.floor(180 + pulse * 75)},100,0.95)`;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, proj.radius, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#fff8cc';
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, proj.radius * 0.45, 0, Math.PI * 2);
+                ctx.fill();
+                return;
+            }
+
             if (proj.homing) {
                 // Homing missile: rocket-like with trail
                 const angle = Math.atan2(proj.dy, proj.dx);
@@ -4423,6 +4587,264 @@
                     }
                 }
             }
+        }
+
+        function drawBoss(boss) {
+            if (!boss) return;
+            const sx = boss.x - state.camera.x;
+            const sy = boss.y - state.camera.y;
+            const r = boss.radius;
+            const vw = canvas.width / currentZoom;
+            const vh = canvas.height / currentZoom;
+            if (sx + r < -50 || sx - r > vw + 50 || sy + r < -50 || sy - r > vh + 50) return;
+
+            const now = Date.now();
+            const pulse = 0.5 + 0.5 * Math.sin(now / 400);
+            const weakened = boss.weakened;
+
+            ctx.save();
+
+            // Outer glow
+            const glowColor = weakened ? 'rgba(0,255,136,' : 'rgba(200,0,0,';
+            ctx.shadowColor = weakened ? '#00ff88' : '#cc0000';
+            ctx.shadowBlur = 30 + pulse * 20;
+
+            // Pulsing outer ring
+            ctx.beginPath();
+            ctx.arc(sx, sy, r + 6 + pulse * 6, 0, Math.PI * 2);
+            ctx.strokeStyle = weakened ? `rgba(0,255,136,${0.3 + pulse * 0.3})` : `rgba(200,0,0,${0.3 + pulse * 0.3})`;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Main body
+            const grad = ctx.createRadialGradient(sx - r * 0.3, sy - r * 0.3, r * 0.1, sx, sy, r);
+            if (weakened) {
+                grad.addColorStop(0, '#004422');
+                grad.addColorStop(0.5, '#001a0e');
+                grad.addColorStop(1, '#000a06');
+            } else {
+                grad.addColorStop(0, '#440000');
+                grad.addColorStop(0.5, '#1a0000');
+                grad.addColorStop(1, '#0a0000');
+            }
+            ctx.beginPath();
+            ctx.arc(sx, sy, r, 0, Math.PI * 2);
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            // Border
+            ctx.strokeStyle = weakened ? `rgba(0,255,136,${0.6 + pulse * 0.4})` : `rgba(200,0,0,${0.6 + pulse * 0.4})`;
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            // Inner cross-hatch detail
+            ctx.shadowBlur = 0;
+            ctx.strokeStyle = weakened ? 'rgba(0,255,136,0.15)' : 'rgba(200,0,0,0.15)';
+            ctx.lineWidth = 1;
+            for (let i = -1; i <= 1; i++) {
+                ctx.beginPath();
+                ctx.moveTo(sx + i * r * 0.5, sy - r * 0.9);
+                ctx.lineTo(sx + i * r * 0.5, sy + r * 0.9);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(sx - r * 0.9, sy + i * r * 0.5);
+                ctx.lineTo(sx + r * 0.9, sy + i * r * 0.5);
+                ctx.stroke();
+            }
+
+            // Shield ring (active during precision strike danger_close + barrage)
+            if (boss.shielded) {
+                const sPulse = 0.5 + 0.5 * Math.sin(now / 150);
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 18 + sPulse * 8, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(255,220,80,${0.7 + sPulse * 0.3})`;
+                ctx.lineWidth = 3 + sPulse * 2;
+                ctx.shadowColor = '#ffdd44';
+                ctx.shadowBlur = 25 + sPulse * 15;
+                ctx.stroke();
+                // Second inner ring
+                ctx.beginPath();
+                ctx.arc(sx, sy, r + 8, 0, Math.PI * 2);
+                ctx.strokeStyle = `rgba(255,200,50,${0.4 + sPulse * 0.3})`;
+                ctx.lineWidth = 1.5;
+                ctx.stroke();
+            }
+
+            // Label
+            ctx.shadowColor = weakened ? '#00ff88' : '#cc0000';
+            ctx.shadowBlur = 8;
+            ctx.font = `bold ${Math.max(10, 14 / currentZoom)}px Orbitron, monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillStyle = weakened ? '#00ff88' : '#ff2200';
+            ctx.fillText(weakened ? 'SLOWED' : 'HUNTER', sx, sy);
+
+            ctx.restore();
+
+            // Edge warning indicator when boss is off-screen edge
+            if (state.you) {
+                const dx = boss.x - state.you.x;
+                const dy = boss.y - state.you.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist > 800) {
+                    const angle = Math.atan2(dy, dx);
+                    const edgeX = canvas.width / 2 / currentZoom + Math.cos(angle) * (Math.min(canvas.width, canvas.height) / currentZoom * 0.42);
+                    const edgeY = canvas.height / 2 / currentZoom + Math.sin(angle) * (Math.min(canvas.width, canvas.height) / currentZoom * 0.42);
+                    ctx.save();
+                    ctx.shadowColor = '#cc0000';
+                    ctx.shadowBlur = 12;
+                    ctx.beginPath();
+                    ctx.translate(edgeX, edgeY);
+                    ctx.rotate(angle);
+                    ctx.moveTo(10, 0);
+                    ctx.lineTo(-8, -7);
+                    ctx.lineTo(-8, 7);
+                    ctx.closePath();
+                    ctx.fillStyle = weakened ? 'rgba(0,255,136,0.8)' : `rgba(200,0,0,${0.5 + pulse * 0.4})`;
+                    ctx.fill();
+                    ctx.restore();
+                }
+            }
+        }
+
+        function drawStrikeReticle(target, phase) {
+            // Drawn in world-space (already inside zoom transform)
+            const sx = target[0] - state.camera.x;
+            const sy = target[1] - state.camera.y;
+            const now = Date.now();
+            const pulse = 0.5 + 0.5 * Math.sin(now / 200);
+            const scatter = 50; // matches STRIKE_SCATTER on server
+            const isBarrage = phase === 'barrage';
+            const isDanger  = phase === 'danger_close';
+
+            const retColor = (isDanger || isBarrage) ? '#ff1100' : '#ff8800';
+            const fastPulse = 0.5 + 0.5 * Math.sin(now / ((isDanger || isBarrage) ? 80 : 200));
+
+            ctx.save();
+            ctx.shadowColor = retColor;
+            ctx.shadowBlur = isBarrage ? 22 : 12;
+
+            // Impact zone fill (danger_close + barrage)
+            if (isDanger || isBarrage) {
+                const zoneFill = ctx.createRadialGradient(sx, sy, 0, sx, sy, scatter);
+                zoneFill.addColorStop(0, `rgba(255,0,0,${0.08 + fastPulse * 0.08})`);
+                zoneFill.addColorStop(1, 'transparent');
+                ctx.fillStyle = zoneFill;
+                ctx.beginPath();
+                ctx.arc(sx, sy, scatter, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Outer scatter boundary
+            ctx.beginPath();
+            ctx.arc(sx, sy, scatter, 0, Math.PI * 2);
+            ctx.strokeStyle = `rgba(255,${(isDanger || isBarrage) ? 30 : 120},0,${0.35 + fastPulse * 0.35})`;
+            ctx.lineWidth = (isDanger || isBarrage) ? 2 : 1;
+            ctx.setLineDash([6, 6]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Crosshair lines
+            ctx.strokeStyle = `rgba(255,${(isDanger || isBarrage) ? 20 : 80},0,${0.7 + fastPulse * 0.3})`;
+            ctx.lineWidth = (isDanger || isBarrage) ? 2 : 1.5;
+            const cs = 28;
+            ctx.beginPath();
+            ctx.moveTo(sx - cs, sy); ctx.lineTo(sx + cs, sy);
+            ctx.moveTo(sx, sy - cs); ctx.lineTo(sx, sy + cs);
+            ctx.stroke();
+
+            // Centre dot
+            ctx.beginPath();
+            ctx.arc(sx, sy, 5 + fastPulse * 4, 0, Math.PI * 2);
+            ctx.fillStyle = `rgba(255,${(isDanger || isBarrage) ? 20 : 80},0,${0.8 + fastPulse * 0.2})`;
+            ctx.fill();
+
+            // Corner brackets
+            const bl = 16;
+            for (const [dx, dy] of [[-1,-1],[1,-1],[1,1],[-1,1]]) {
+                const bx = sx + dx * (scatter - 2);
+                const by = sy + dy * (scatter - 2);
+                ctx.beginPath();
+                ctx.moveTo(bx, by); ctx.lineTo(bx - dx * bl, by);
+                ctx.moveTo(bx, by); ctx.lineTo(bx, by - dy * bl);
+                ctx.strokeStyle = `rgba(255,${(isDanger || isBarrage) ? 20 : 100},0,${0.6 + fastPulse * 0.4})`;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+
+            ctx.restore();
+        }
+
+        function drawStrikeAlert() {
+            if (state.connectionMode !== 'challenge' || state.challengeName !== 'boss_hunt') return;
+            const cd = state.challengeData;
+            if (!cd || !cd.strike_phase || cd.strike_phase === 'barrage') return;
+
+            const phase = cd.strike_phase;
+            const now = Date.now();
+            const pulse = 0.5 + 0.5 * Math.sin(now / 120);
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+
+            const lines = {
+                targeting:    { top: 'TARGET', bottom: 'ACQUIRED',     color: '#ff8800', size: 1.0 },
+                cleared_hot:  { top: 'CLEARED HOT', bottom: 'CORNER BUSTER', color: '#ff5500', size: 1.05 },
+                danger_close: { top: 'DANGER', bottom: 'CLOSE',        color: '#ff1100', size: 1.15 },
+            };
+            const cfg = lines[phase];
+            if (!cfg) return;
+
+            ctx.save();
+
+            // Vignette flash for danger_close
+            if (phase === 'danger_close') {
+                const vAlpha = 0.08 + pulse * 0.12;
+                const vGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(canvas.width, canvas.height) * 0.7);
+                vGrad.addColorStop(0, 'rgba(255,0,0,0)');
+                vGrad.addColorStop(1, `rgba(255,0,0,${vAlpha})`);
+                ctx.fillStyle = vGrad;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            const scale = cfg.size * (phase === 'danger_close' ? (0.95 + pulse * 0.1) : 1.0);
+            const topSize = Math.min(Math.round(canvas.height * 0.028 * scale), 22);
+            const botSize = Math.min(Math.round(canvas.height * 0.042 * scale), 34);
+            // Position near top so reticle (centre) stays fully visible
+            const alertY = canvas.height * 0.13;
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            // Top line (smaller label)
+            ctx.font = `700 ${topSize}px Orbitron, monospace`;
+            ctx.shadowColor = cfg.color;
+            ctx.shadowBlur = 20 + pulse * 15;
+            ctx.fillStyle = cfg.color;
+            ctx.globalAlpha = 0.75 + pulse * 0.25;
+            ctx.fillText(cfg.top, cx, alertY);
+
+            // Bottom line (large impact word)
+            ctx.font = `900 ${botSize}px Orbitron, monospace`;
+            ctx.shadowBlur = 30 + pulse * 20;
+            ctx.globalAlpha = 0.85 + pulse * 0.15;
+            ctx.fillText(cfg.bottom, cx, alertY + botSize * 1.1);
+
+            // Flanking dashes
+            const dashW = canvas.width * 0.08;
+            const dashY = alertY + botSize * 0.55;
+            ctx.globalAlpha = 0.4 + pulse * 0.3;
+            ctx.strokeStyle = cfg.color;
+            ctx.lineWidth = 2;
+            ctx.shadowBlur = 8;
+            const textHalfW = ctx.measureText(cfg.bottom).width / 2 + 20;
+            ctx.beginPath();
+            ctx.moveTo(cx - textHalfW - dashW, dashY);
+            ctx.lineTo(cx - textHalfW, dashY);
+            ctx.moveTo(cx + textHalfW, dashY);
+            ctx.lineTo(cx + textHalfW + dashW, dashY);
+            ctx.stroke();
+
+            ctx.restore();
         }
 
         function drawWall(wall) {

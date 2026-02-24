@@ -205,6 +205,37 @@ def _compute_rally_layout():
 
 RALLY_BARRIER_POSITIONS, RALLY_CHECKPOINT_POSITIONS = _compute_rally_layout()
 
+# Hunter Seeker challenge configuration
+BOSS_RADIUS = 200.0
+BOSS_SPEED_BASE = 4.0
+BOSS_SPEED_MAX = 11.0
+BOSS_SPEED_RAMP_DURATION = 120.0       # seconds to ramp from base to max speed
+BOSS_WEAKEN_DURATION = 4.0             # seconds boss is slowed after being hit
+BOSS_WEAKEN_SPEED_MULT = 0.45          # speed multiplier when weakened
+BOSS_WALL_REPULSION_RANGE = 140        # px from wall edge to start repulsion force
+BOSS_SHOOT_PHASE_INTERVAL = 90.0       # seconds between shooting phases starting
+BOSS_SHOOT_PHASE_DURATION = 30.0       # seconds each shooting phase lasts
+BOSS_SHOOT_COOLDOWN = 60.0             # seconds cooldown after shooting phase ends
+BOSS_SHOOT_FIRE_INTERVAL = 2.5         # seconds between shots during shooting phase
+BOSS_SHOT_SPEED = 18.0
+BOSS_SHOT_DAMAGE = 15
+BOSS_SHOT_RADIUS = 8
+BOSS_SHOT_LIFETIME = 4.0
+BOSS_HUNT_POWERUP_TYPES = ["shield", "rapid_fire", "speed_force", "phantom", "homing_missiles"]
+
+# Corner-buster precision strike configuration
+CAMP_TRIGGER_TIME = 12.0        # seconds boss cannot close distance before strike initiates
+CAMP_CLOSE_THRESHOLD = 80.0     # boss must reduce distance by this much to reset timer
+STRIKE_PHASE_DURATION = 3.0     # seconds each alert phase lasts
+STRIKE_COOLDOWN = 25.0          # seconds before another strike can trigger after one ends
+STRIKE_BARRAGE_SHOTS = 15
+STRIKE_BARRAGE_INTERVAL = 0.2   # seconds between barrage impacts
+STRIKE_SCATTER = 50             # px radius scatter around locked target
+STRIKE_SHOT_SPEED = 30.0
+STRIKE_SHOT_RADIUS = 10
+STRIKE_SHOT_DAMAGE = 22
+STRIKE_SHOT_LIFETIME = 3.0
+
 
 def _dist_to_track(px: float, py: float) -> float:
     """Minimum distance from a point to the nearest track segment centreline."""
@@ -463,6 +494,27 @@ class BlackHole:
 
     def to_dict(self):
         return {"x": round(self.x, 1), "y": round(self.y, 1), "radius": round(self.current_radius, 1)}
+
+
+@dataclass
+class BossOrb:
+    id: str
+    x: float
+    y: float
+    radius: float = BOSS_RADIUS
+    weakened_until: float = 0.0
+    shielded: bool = False
+
+    def to_dict(self, current_time: float):
+        return {
+            "id": self.id,
+            "x": round(self.x, 1),
+            "y": round(self.y, 1),
+            "radius": self.radius,
+            "weakened": current_time < self.weakened_until,
+            "weakened_remaining": round(max(0.0, self.weakened_until - current_time), 1),
+            "shielded": self.shielded,
+        }
 
 
 @dataclass
@@ -2586,6 +2638,323 @@ class RallyRunGame(GameState):
         return self.lap_count >= RALLY_MAX_LAPS
 
 
+class BossHuntGame(GameState):
+    """Isolated single-player Hunter Seeker challenge."""
+
+    def __init__(self, player_id: str):
+        super().__init__()
+        self.player_id = player_id
+        self.challenge_start_time = time.time()
+        # Spawn boss in a random corner, away from where player starts
+        corners = [(400.0, 400.0), (4600.0, 400.0), (400.0, 4600.0), (4600.0, 4600.0)]
+        bx, by = random.choice(corners)
+        self.boss = BossOrb(id="boss", x=bx, y=by)
+        # Shooting phase state
+        self._shooting_phase = False
+        self._next_phase_change = self.challenge_start_time + BOSS_SHOOT_PHASE_INTERVAL
+        self._boss_shoot_cooldown_until = 0.0
+        # Precision strike (corner-buster) state
+        self._camp_best_dist = float('inf')
+        self._camp_start_time = self.challenge_start_time
+        self._strike_phase = None   # None | "targeting" | "cleared_hot" | "danger_close" | "barrage"
+        self._strike_phase_until = 0.0
+        self._strike_origin = (0.0, 0.0)
+        self._strike_next_shot = 0.0
+        self._strike_shots_fired = 0
+        self._strike_cooldown_until = 0.0
+
+    def get_elapsed(self) -> float:
+        return time.time() - self.challenge_start_time
+
+    # --- Disable mine mechanic for this mode ---
+
+    def spawn_mine_pickups(self):
+        pass
+
+    def _collect_mine_pickups(self, current_time: float):
+        pass
+
+    def _process_mine_pickup_respawns(self, current_time: float):
+        pass
+
+    def _update_mines(self, current_time: float):
+        pass
+
+    # --- Restrict powerup pool to relevant types ---
+
+    def _collect_powerup_orbs(self, current_time: float):
+        powerups_to_remove = []
+        for orb_id, orb in self.powerup_orbs.items():
+            player = self.players.get(self.player_id)
+            if not player or not player.alive:
+                continue
+            dx = player.x - orb.x
+            dy = player.y - orb.y
+            combined = player.radius + orb.radius
+            if dx * dx + dy * dy < combined * combined:
+                powerup_type = random.choice(BOSS_HUNT_POWERUP_TYPES)
+                if powerup_type == "homing_missiles":
+                    player.homing_missiles_remaining = HOMING_MISSILES_AMMO
+                else:
+                    player.active_powerup = powerup_type
+                    player.powerup_until = current_time + POWERUP_DURATIONS.get(powerup_type, 5.0)
+                powerups_to_remove.append(orb_id)
+                break
+        if powerups_to_remove:
+            for orb_id in powerups_to_remove:
+                del self.powerup_orbs[orb_id]
+            self._powerup_orbs_cache = None
+            for _ in powerups_to_remove:
+                self.powerup_respawn_timers.append(current_time + POWERUP_RESPAWN_DELAY)
+
+    # --- Boss shot hit detection: kill player at MIN_RADIUS ---
+
+    def _projectile_hit_player(self, proj, current_time: float) -> bool:
+        player = self.players.get(self.player_id)
+        if not player or not player.alive or player.has_protection(current_time):
+            return False
+        if player.id == proj.owner_id:
+            return False
+        dx = player.x - proj.x
+        dy = player.y - proj.y
+        combined = player.radius + proj.radius
+        if dx * dx + dy * dy < combined * combined:
+            damage = HOMING_MISSILE_DAMAGE if isinstance(proj, HomingMissile) else PROJECTILE_DAMAGE
+            player.radius = max(MIN_RADIUS, player.radius - damage)
+            if player.radius <= MIN_RADIUS and proj.owner_id in ("boss", "strike"):
+                player.alive = False
+                self.add_kill("Hunter Seeker", player.name)
+            return True
+        return False
+
+    # --- Boss AI ---
+
+    def _move_boss(self, current_time: float):
+        """Move boss toward player with wall repulsion for smooth flow."""
+        player = self.players.get(self.player_id)
+        if not player or not player.alive:
+            return
+
+        elapsed = self.get_elapsed()
+        ramp = min(elapsed / BOSS_SPEED_RAMP_DURATION, 1.0)
+        speed = BOSS_SPEED_BASE + (BOSS_SPEED_MAX - BOSS_SPEED_BASE) * ramp
+        if current_time < self.boss.weakened_until:
+            speed *= BOSS_WEAKEN_SPEED_MULT
+
+        # Primary force: toward player
+        dx = player.x - self.boss.x
+        dy = player.y - self.boss.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist < 1:
+            return
+        fx = dx / dist
+        fy = dy / dist
+
+        # Wall repulsion: push boss away from wall surfaces
+        for wall in self.walls.values():
+            cx = max(wall.x, min(self.boss.x, wall.x + wall.width))
+            cy = max(wall.y, min(self.boss.y, wall.y + wall.height))
+            wdx = self.boss.x - cx
+            wdy = self.boss.y - cy
+            wdist = math.sqrt(wdx * wdx + wdy * wdy)
+            if 0 < wdist < BOSS_WALL_REPULSION_RANGE:
+                strength = (1.0 - wdist / BOSS_WALL_REPULSION_RANGE) * 2.5
+                fx += (wdx / wdist) * strength
+                fy += (wdy / wdist) * strength
+
+        # Normalize combined force
+        mag = math.sqrt(fx * fx + fy * fy)
+        if mag > 0:
+            fx /= mag
+            fy /= mag
+
+        self.boss.x = max(self.boss.radius, min(WORLD_WIDTH - self.boss.radius,
+                                                 self.boss.x + fx * speed))
+        self.boss.y = max(self.boss.radius, min(WORLD_HEIGHT - self.boss.radius,
+                                                 self.boss.y + fy * speed))
+
+    def _check_boss_collision(self, current_time: float):
+        """Boss contact-kills the player (boss is always large enough to consume)."""
+        player = self.players.get(self.player_id)
+        if not player or not player.alive or player.has_protection(current_time):
+            return
+        dx = player.x - self.boss.x
+        dy = player.y - self.boss.y
+        combined = player.radius + self.boss.radius
+        if dx * dx + dy * dy < combined * combined:
+            player.alive = False
+            self.add_kill("Hunter Seeker", player.name)
+
+    def _check_player_shots_hit_boss(self, current_time: float):
+        """Player projectiles weaken the boss (slow it temporarily)."""
+        if self.boss.shielded:
+            return  # Boss shield is up - shots bounce off
+        projs_to_remove = []
+        for proj_id, proj in self.projectiles.items():
+            if proj.owner_id != self.player_id:
+                continue
+            dx = proj.x - self.boss.x
+            dy = proj.y - self.boss.y
+            combined = proj.radius + self.boss.radius
+            if dx * dx + dy * dy < combined * combined:
+                self.boss.weakened_until = max(
+                    self.boss.weakened_until, current_time + BOSS_WEAKEN_DURATION
+                )
+                projs_to_remove.append(proj_id)
+        for proj_id in projs_to_remove:
+            if proj_id in self.projectiles:
+                del self.projectiles[proj_id]
+
+    def _update_shooting_phase(self, current_time: float):
+        """Manage the boss shooting phase state machine and fire shots."""
+        # Phase transitions
+        if current_time >= self._next_phase_change:
+            if not self._shooting_phase:
+                self._shooting_phase = True
+                self._next_phase_change = current_time + BOSS_SHOOT_PHASE_DURATION
+            else:
+                self._shooting_phase = False
+                self._next_phase_change = current_time + BOSS_SHOOT_COOLDOWN
+
+        if not self._shooting_phase:
+            return
+
+        player = self.players.get(self.player_id)
+        if not player or not player.alive:
+            return
+        if current_time < self._boss_shoot_cooldown_until:
+            return
+
+        # Fire a shot at the player
+        dx = player.x - self.boss.x
+        dy = player.y - self.boss.y
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist < 1:
+            return
+        ndx, ndy = dx / dist, dy / dist
+
+        self.projectile_counter += 1
+        proj_id = f"bossshot_{self.projectile_counter}"
+        self.projectiles[proj_id] = Projectile(
+            id=proj_id,
+            owner_id="boss",
+            x=self.boss.x + ndx * (self.boss.radius + 12),
+            y=self.boss.y + ndy * (self.boss.radius + 12),
+            dx=ndx,
+            dy=ndy,
+            color="#ff2200",
+            created_at=current_time,
+            lifetime=BOSS_SHOT_LIFETIME,
+            radius=BOSS_SHOT_RADIUS,
+        )
+        self._boss_shoot_cooldown_until = current_time + BOSS_SHOOT_FIRE_INTERVAL
+
+    def _fire_strike_shot(self, current_time: float):
+        """Fire a single barrage round at the locked strike origin with scatter."""
+        tx = self._strike_origin[0] + random.uniform(-STRIKE_SCATTER, STRIKE_SCATTER)
+        ty = self._strike_origin[1] + random.uniform(-STRIKE_SCATTER, STRIKE_SCATTER)
+        angle = random.uniform(0, 2 * math.pi)
+        spawn_dist = random.uniform(380, 520)
+        sx = max(50.0, min(float(WORLD_WIDTH - 50), tx + math.cos(angle) * spawn_dist))
+        sy = max(50.0, min(float(WORLD_HEIGHT - 50), ty + math.sin(angle) * spawn_dist))
+        dx, dy = tx - sx, ty - sy
+        dist = math.sqrt(dx * dx + dy * dy)
+        if dist < 1:
+            return
+        ndx, ndy = dx / dist, dy / dist
+        self.projectile_counter += 1
+        self.projectiles[f"strike_{self.projectile_counter}"] = Projectile(
+            id=f"strike_{self.projectile_counter}",
+            owner_id="strike",
+            x=sx, y=sy, dx=ndx, dy=ndy,
+            color="#ff8800",
+            created_at=current_time,
+            lifetime=STRIKE_SHOT_LIFETIME,
+            radius=STRIKE_SHOT_RADIUS,
+        )
+
+    def _update_precision_strike(self, current_time: float):
+        """Track corner camping and run the 3-phase precision strike sequence."""
+        player = self.players.get(self.player_id)
+        if not player or not player.alive:
+            self._strike_phase = None
+            self.boss.shielded = False
+            return
+
+        current_dist = math.sqrt((self.boss.x - player.x) ** 2 + (self.boss.y - player.y) ** 2)
+
+        # Advance active strike sequence
+        if self._strike_phase is not None:
+            if self._strike_phase == "targeting" and current_time >= self._strike_phase_until:
+                self._strike_phase = "cleared_hot"
+                self._strike_phase_until = current_time + STRIKE_PHASE_DURATION
+
+            elif self._strike_phase == "cleared_hot" and current_time >= self._strike_phase_until:
+                self._strike_phase = "danger_close"
+                self._strike_phase_until = current_time + STRIKE_PHASE_DURATION
+                self.boss.shielded = True
+
+            elif self._strike_phase == "danger_close" and current_time >= self._strike_phase_until:
+                self._strike_phase = "barrage"
+                self._strike_phase_until = current_time + STRIKE_BARRAGE_SHOTS * STRIKE_BARRAGE_INTERVAL + 0.5
+                self._strike_next_shot = current_time
+                self._strike_shots_fired = 0
+
+            elif self._strike_phase == "barrage":
+                if self._strike_shots_fired < STRIKE_BARRAGE_SHOTS and current_time >= self._strike_next_shot:
+                    self._fire_strike_shot(current_time)
+                    self._strike_shots_fired += 1
+                    self._strike_next_shot = current_time + STRIKE_BARRAGE_INTERVAL
+                if current_time >= self._strike_phase_until:
+                    self._strike_phase = None
+                    self.boss.shielded = False
+                    self._strike_cooldown_until = current_time + STRIKE_COOLDOWN
+                    self._camp_best_dist = current_dist
+                    self._camp_start_time = current_time
+            return
+
+        # Not in a strike - track whether boss is making progress toward player
+        if current_dist < self._camp_best_dist - CAMP_CLOSE_THRESHOLD:
+            self._camp_best_dist = current_dist
+            self._camp_start_time = current_time
+        elif (current_time - self._camp_start_time >= CAMP_TRIGGER_TIME
+              and current_time >= self._strike_cooldown_until):
+            # Boss has been blocked long enough - initiate strike
+            self._strike_origin = (player.x, player.y)
+            self._strike_phase = "targeting"
+            self._strike_phase_until = current_time + STRIKE_PHASE_DURATION
+            self._camp_best_dist = current_dist
+            self._camp_start_time = current_time
+
+    def tick(self):
+        super().tick()
+        current_time = time.time()
+        self._move_boss(current_time)
+        self._check_boss_collision(current_time)
+        self._check_player_shots_hit_boss(current_time)
+        self._update_shooting_phase(current_time)
+        self._update_precision_strike(current_time)
+
+    def build_shared_state(self, current_time: float) -> dict:
+        state = super().build_shared_state(current_time)
+        state["boss"] = self.boss.to_dict(current_time)
+        return state
+
+    def get_boss_hunt_state(self) -> dict:
+        now = time.time()
+        return {
+            "type": "hunter_seeker",
+            "time_survived": round(self.get_elapsed(), 1),
+            "boss_weakened": now < self.boss.weakened_until,
+            "boss_weakened_remaining": round(max(0.0, self.boss.weakened_until - now), 1),
+            "shooting_phase": self._shooting_phase,
+            "next_phase_in": round(max(0.0, self._next_phase_change - now), 1),
+            "strike_phase": self._strike_phase,
+            "strike_target": [round(self._strike_origin[0], 1), round(self._strike_origin[1], 1)]
+                              if self._strike_phase else None,
+        }
+
+
 # Global game state
 game = GameState()
 
@@ -2595,6 +2964,7 @@ SCORES_PATH = "/data/scores.json"
 missile_magnet_scores: list = []
 rally_run_scores: list = []
 all_time_scores: list = []
+boss_hunt_scores: list = []
 
 
 def load_scores():
@@ -2606,6 +2976,7 @@ def load_scores():
             missile_magnet_scores = data.get("missile_magnet", [])[:10]
             rally_run_scores = data.get("rally_run", [])[:10]
             all_time_scores = data.get("all_time", [])[:10]
+            boss_hunt_scores = data.get("boss_hunt", [])[:10]
             print(f"Scores loaded from {SCORES_PATH}")
         else:
             print(f"No scores file at {SCORES_PATH} - starting fresh")
@@ -2621,6 +2992,7 @@ def save_scores():
                 "missile_magnet": missile_magnet_scores,
                 "rally_run": rally_run_scores,
                 "all_time": all_time_scores,
+                "boss_hunt": boss_hunt_scores,
             }, f, indent=2)
     except Exception as e:
         print(f"Could not save scores: {e}")
@@ -2660,6 +3032,24 @@ def record_rally_score(name: str, best_lap: float) -> int:
         if s is entry:
             return i + 1
     return len(rally_run_scores)
+
+
+def record_boss_hunt_score(name: str, time_survived: float) -> int:
+    """Record survival time for Hunter Seeker. Personal best only, top 10 descending, return 1-indexed rank."""
+    global boss_hunt_scores
+    existing = next((s for s in boss_hunt_scores if s["name"] == name), None)
+    if existing and existing["time"] >= time_survived:
+        return next((i + 1 for i, s in enumerate(boss_hunt_scores) if s["name"] == name), len(boss_hunt_scores))
+    boss_hunt_scores = [s for s in boss_hunt_scores if s["name"] != name]
+    entry = {"name": name, "time": time_survived}
+    boss_hunt_scores.append(entry)
+    boss_hunt_scores.sort(key=lambda s: s["time"], reverse=True)
+    boss_hunt_scores = boss_hunt_scores[:10]
+    save_scores()
+    for i, s in enumerate(boss_hunt_scores):
+        if s is entry:
+            return i + 1
+    return len(boss_hunt_scores)
 
 
 def record_alltime_score(name: str, score: int):
@@ -2848,6 +3238,52 @@ async def run_rally_loop(player_id: str, rally_game: RallyRunGame, websocket):
         pass
 
 
+async def run_boss_loop(player_id: str, boss_game: BossHuntGame, websocket):
+    """Tick a solo Hunter Seeker game and send state to the player each frame."""
+    try:
+        while True:
+            try:
+                boss_game.tick()
+            except Exception as e:
+                print(f"Boss hunt tick error: {e}")
+
+            current_time = time.time()
+            player = boss_game.players.get(player_id)
+            if not player:
+                break
+
+            shared_state = boss_game.build_shared_state(current_time)
+            shared_state["challenge"] = boss_game.get_boss_hunt_state()
+
+            if not player.alive:
+                time_survived = round(boss_game.get_elapsed(), 1)
+                rank = record_boss_hunt_score(player.name, time_survived)
+                shared_state["type"] = "challenge_result"
+                shared_state["challenge"]["rank"] = rank
+                shared_state["challenge"]["total"] = len(boss_hunt_scores)
+                shared_state["challenge"]["top_scores"] = boss_hunt_scores[:5]
+                try:
+                    await asyncio.wait_for(websocket.send(json.dumps(shared_state)), timeout=SEND_TIMEOUT)
+                except Exception:
+                    pass
+                break
+
+            you_json = json.dumps(player.to_dict(current_time))
+            shared_json = json.dumps(shared_state)
+            message = shared_json[:-1] + ',"you":' + you_json + '}'
+            try:
+                await asyncio.wait_for(websocket.send(message), timeout=SEND_TIMEOUT)
+            except (asyncio.TimeoutError, ConnectionClosed):
+                break
+            except Exception as e:
+                print(f"Boss hunt send error: {e}")
+                break
+
+            await asyncio.sleep(TICK_RATE)
+    except asyncio.CancelledError:
+        pass
+
+
 async def handle_client(websocket):
     """Handle a single client connection."""
     global active_connections
@@ -2908,6 +3344,22 @@ async def handle_client(websocket):
                     await websocket.send(json.dumps(welcome_data))
                     print(f"Challenge player {name} ({player_id}) started Nitro Orb!")
                     tick_task = asyncio.create_task(run_rally_loop(player_id, challenge_game, websocket))
+                elif challenge_name == "boss_hunt":
+                    challenge_game = BossHuntGame(player_id)
+                    player = challenge_game.add_player(player_id, name, websocket)
+                    welcome_data = {
+                        "type": "welcome",
+                        "player_id": player_id,
+                        "mode": "challenge",
+                        "challenge": "boss_hunt",
+                        "player": player.to_dict(time.time()),
+                        "boss": challenge_game.boss.to_dict(time.time()),
+                        "top_scores": boss_hunt_scores[:5],
+                    }
+                    welcome_data.update(challenge_game.get_static_data())
+                    await websocket.send(json.dumps(welcome_data))
+                    print(f"Challenge player {name} ({player_id}) started Hunter Seeker!")
+                    tick_task = asyncio.create_task(run_boss_loop(player_id, challenge_game, websocket))
                 else:
                     challenge_game = ChallengeGame(player_id)
                     player = challenge_game.add_player(player_id, name, websocket)
@@ -3060,6 +3512,9 @@ class SafeHTTPHandler(http.server.SimpleHTTPRequestHandler):
         if path == "/api/alltime/scores":
             self._serve_alltime_scores()
             return
+        if path == "/api/boss/scores":
+            self._serve_boss_scores()
+            return
         if path == "/api/status":
             self._serve_status()
             return
@@ -3080,6 +3535,14 @@ class SafeHTTPHandler(http.server.SimpleHTTPRequestHandler):
 
     def _serve_rally_scores(self):
         data = json.dumps(rally_run_scores[:10]).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _serve_boss_scores(self):
+        data = json.dumps(boss_hunt_scores[:10]).encode()
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(data)))

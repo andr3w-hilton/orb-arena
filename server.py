@@ -224,7 +224,7 @@ BOSS_SHOT_LIFETIME = 4.0
 BOSS_HUNT_POWERUP_TYPES = ["shield", "rapid_fire", "speed_force", "phantom", "homing_missiles"]
 
 # Corner-buster precision strike configuration
-CAMP_TRIGGER_TIME = 15.0        # seconds boss cannot close distance before strike initiates
+CAMP_TRIGGER_TIME = 10.0        # seconds boss cannot close distance before strike initiates
 CAMP_CLOSE_THRESHOLD = 80.0     # boss must reduce distance by this much to reset timer
 CAMP_PLAYER_MOVE_THRESHOLD = 300.0  # player moving this far from camp origin resets timer
 STRIKE_PHASE_DURATION = 3.0     # seconds each alert phase lasts

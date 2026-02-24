@@ -4809,8 +4809,10 @@
             const scale = cfg.size * (phase === 'danger_close' ? (0.95 + pulse * 0.1) : 1.0);
             const topSize = Math.min(Math.round(canvas.height * 0.028 * scale), 22);
             const botSize = Math.min(Math.round(canvas.height * 0.042 * scale), 34);
-            // Position near top so reticle (centre) stays fully visible
-            const alertY = canvas.height * 0.13;
+            // Anchor just above the player orb (camera always centres player on screen)
+            const orbScreenR = (state.you ? state.you.radius : 20) * currentZoom;
+            const rawAlertY = canvas.height / 2 - orbScreenR - 14 - (topSize + botSize * 1.2);
+            const alertY = Math.max(topSize + 6, rawAlertY);
 
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';

@@ -224,8 +224,9 @@ BOSS_SHOT_LIFETIME = 4.0
 BOSS_HUNT_POWERUP_TYPES = ["shield", "rapid_fire", "speed_force", "phantom", "homing_missiles"]
 
 # Corner-buster precision strike configuration
-CAMP_TRIGGER_TIME = 12.0        # seconds boss cannot close distance before strike initiates
+CAMP_TRIGGER_TIME = 15.0        # seconds boss cannot close distance before strike initiates
 CAMP_CLOSE_THRESHOLD = 80.0     # boss must reduce distance by this much to reset timer
+CAMP_PLAYER_MOVE_THRESHOLD = 300.0  # player moving this far from camp origin resets timer
 STRIKE_PHASE_DURATION = 3.0     # seconds each alert phase lasts
 STRIKE_COOLDOWN = 25.0          # seconds before another strike can trigger after one ends
 STRIKE_BARRAGE_SHOTS = 15
@@ -2656,6 +2657,7 @@ class BossHuntGame(GameState):
         # Precision strike (corner-buster) state
         self._camp_best_dist = float('inf')
         self._camp_start_time = self.challenge_start_time
+        self._camp_player_pos = None  # player position when camp timer last reset (set on first tick)
         self._strike_phase = None   # None | "targeting" | "cleared_hot" | "danger_close" | "barrage"
         self._strike_phase_until = 0.0
         self._strike_origin = (0.0, 0.0)
@@ -2911,20 +2913,31 @@ class BossHuntGame(GameState):
                     self._strike_cooldown_until = current_time + STRIKE_COOLDOWN
                     self._camp_best_dist = current_dist
                     self._camp_start_time = current_time
+                    self._camp_player_pos = (player.x, player.y)
             return
 
         # Not in a strike - track whether boss is making progress toward player
-        if current_dist < self._camp_best_dist - CAMP_CLOSE_THRESHOLD:
+        if self._camp_player_pos is None:
+            self._camp_player_pos = (player.x, player.y)
+        player_moved = math.sqrt(
+            (player.x - self._camp_player_pos[0]) ** 2 +
+            (player.y - self._camp_player_pos[1]) ** 2
+        ) > CAMP_PLAYER_MOVE_THRESHOLD
+
+        if current_dist < self._camp_best_dist - CAMP_CLOSE_THRESHOLD or player_moved:
+            # Boss closed in, or player is actively roaming - not camping
             self._camp_best_dist = current_dist
             self._camp_start_time = current_time
+            self._camp_player_pos = (player.x, player.y)
         elif (current_time - self._camp_start_time >= CAMP_TRIGGER_TIME
               and current_time >= self._strike_cooldown_until):
-            # Boss has been blocked long enough - initiate strike
+            # Boss has been blocked and player hasn't moved - initiate strike
             self._strike_origin = (player.x, player.y)
             self._strike_phase = "targeting"
             self._strike_phase_until = current_time + STRIKE_PHASE_DURATION
             self._camp_best_dist = current_dist
             self._camp_start_time = current_time
+            self._camp_player_pos = (player.x, player.y)
 
     def tick(self):
         super().tick()

@@ -2775,6 +2775,21 @@ class BossHuntGame(GameState):
         self.boss.y = max(self.boss.radius, min(WORLD_HEIGHT - self.boss.radius,
                                                  self.boss.y + fy * speed))
 
+        # Hard wall collision: push boss out of any wall it has entered
+        for wall in self.walls.values():
+            cx = max(wall.x, min(self.boss.x, wall.x + wall.width))
+            cy = max(wall.y, min(self.boss.y, wall.y + wall.height))
+            wdx = self.boss.x - cx
+            wdy = self.boss.y - cy
+            wdist = math.sqrt(wdx * wdx + wdy * wdy)
+            if wdist < self.boss.radius:
+                if wdist < 0.001:
+                    # Boss centre is exactly on the wall edge - push upward as a safe default
+                    wdx, wdy, wdist = 0.0, -1.0, 1.0
+                overlap = self.boss.radius - wdist
+                self.boss.x += (wdx / wdist) * overlap
+                self.boss.y += (wdy / wdist) * overlap
+
     def _check_boss_collision(self, current_time: float):
         """Boss contact-kills the player (boss is always large enough to consume)."""
         player = self.players.get(self.player_id)

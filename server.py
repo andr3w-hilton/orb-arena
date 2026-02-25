@@ -2996,7 +2996,7 @@ boss_hunt_scores: list = []
 
 
 def load_scores():
-    global missile_magnet_scores, rally_run_scores, all_time_scores
+    global missile_magnet_scores, rally_run_scores, all_time_scores, boss_hunt_scores
     try:
         if os.path.exists(SCORES_PATH):
             with open(SCORES_PATH, "r") as f:

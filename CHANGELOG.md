@@ -1,5 +1,25 @@
 # Orb Arena - Changelog
 
+## v1.3.0 - Hunter Seeker
+
+### New Challenge: Hunter Seeker
+- New solo challenge: an AI boss orb hunts you around the arena
+- Boss is always larger than the maximum player size - it can always consume you if it catches you
+- Shoot the boss to weaken it, slowing it temporarily, but it cannot be killed
+- Boss speed ramps up over time - the longer you survive, the more aggressive it gets
+- Shooting phases: the boss periodically fires homing shots at the player
+- Camping prevention: if the boss can't close distance for 10 seconds, a precision barrage strike is called in
+- Leaderboard tracks longest time survived (top 10, one entry per player, personal best only)
+- Crimson colour scheme to distinguish it from other challenges
+
+### Boss Behaviour
+- Wall collision now fully enforced: boss physically cannot clip through or past wall edges
+- Boss navigates around obstacles rather than pushing through them, making wall cover genuinely useful
+- Hard circle-AABB collision resolution applied after each move tick (replaces soft repulsion-only approach)
+- Fixes corner jitter caused by competing repulsion forces
+
+---
+
 ## v1.2.0 - UI Overhaul
 
 ### New Look

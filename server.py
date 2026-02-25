@@ -235,7 +235,7 @@ STRIKE_SCATTER = 50             # px radius scatter around locked target
 STRIKE_SHOT_SPEED = 30.0
 STRIKE_SHOT_RADIUS = 10
 STRIKE_SHOT_DAMAGE = 22
-STRIKE_SHOT_LIFETIME = 3.0
+STRIKE_SHOT_LIFETIME = 4.0
 
 
 def _dist_to_track(px: float, py: float) -> float:
@@ -2856,7 +2856,7 @@ class BossHuntGame(GameState):
         tx = self._strike_origin[0] + random.uniform(-STRIKE_SCATTER, STRIKE_SCATTER)
         ty = self._strike_origin[1] + random.uniform(-STRIKE_SCATTER, STRIKE_SCATTER)
         angle = random.uniform(0, 2 * math.pi)
-        spawn_dist = random.uniform(380, 520)
+        spawn_dist = random.uniform(1500, 2200)
         sx = max(50.0, min(float(WORLD_WIDTH - 50), tx + math.cos(angle) * spawn_dist))
         sy = max(50.0, min(float(WORLD_HEIGHT - 50), ty + math.sin(angle) * spawn_dist))
         dx, dy = tx - sx, ty - sy

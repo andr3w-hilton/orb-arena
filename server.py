@@ -78,7 +78,7 @@ HOMING_MISSILES_AMMO = 3  # discrete shots granted on pickup
 
 # Wormhole power-up configuration
 WORMHOLE_SPEED = 12           # portal travel speed (px/tick)
-WORMHOLE_TRAVEL_DIST = 200    # px the portal travels before stopping dead
+WORMHOLE_TRAVEL_DIST = 250    # px the portal travels before stopping dead
 WORMHOLE_LIFETIME = 6.0       # seconds before portal closes on its own
 WORMHOLE_DAMAGE = 15          # radius damage dealt to enemy who enters portal
 WORMHOLE_RADIUS = 22          # collision/visual radius

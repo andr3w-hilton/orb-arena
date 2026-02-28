@@ -72,9 +72,17 @@ CRITICAL_MASS_TIMER = 30.0  # seconds before explosion
 POWERUP_COUNT = 5  # max on map at once
 POWERUP_RADIUS = 14
 POWERUP_RESPAWN_DELAY = 30.0  # seconds before replacement spawns
-POWERUP_TYPES = ["shield", "rapid_fire", "magnet", "phantom", "speed_force", "homing_missiles", "trail"]
+POWERUP_TYPES = ["shield", "rapid_fire", "magnet", "phantom", "speed_force", "homing_missiles", "trail", "wormhole"]
 POWERUP_DURATIONS = {"shield": 5.0, "rapid_fire": 5.0, "magnet": 8.0, "phantom": 5.0, "speed_force": 7.0, "trail": 8.0}
 HOMING_MISSILES_AMMO = 3  # discrete shots granted on pickup
+
+# Wormhole power-up configuration
+WORMHOLE_SPEED = 12           # portal travel speed (px/tick)
+WORMHOLE_TRAVEL_DIST = 200    # px the portal travels before stopping dead
+WORMHOLE_LIFETIME = 6.0       # seconds before portal closes on its own
+WORMHOLE_DAMAGE = 15          # radius damage dealt to enemy who enters portal
+WORMHOLE_RADIUS = 22          # collision/visual radius
+WORMHOLE_MIN_EXIT_DIST = 600  # minimum px between entry and exit point
 MAGNET_RANGE = 400  # radius for magnet pull
 MAGNET_STRENGTH = 22  # speed orbs move toward player (must outpace base speed of 14)
 
@@ -412,6 +420,28 @@ class HomingMissile(Projectile):
 
 
 @dataclass
+class WormholePortal:
+    id: str
+    owner_id: str
+    x: float
+    y: float
+    dx: float           # normalized travel direction
+    dy: float
+    travel_remaining: float = WORMHOLE_TRAVEL_DIST
+    traveling: bool = True
+    created_at: float = 0.0
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "owner_id": self.owner_id,
+            "x": round(self.x, 1),
+            "y": round(self.y, 1),
+            "traveling": self.traveling
+        }
+
+
+@dataclass
 class Mine:
     id: str
     owner_id: str
@@ -550,6 +580,7 @@ class Player:
     homing_missiles_remaining: int = 0
     # Trail power-up tracking
     trail_held: bool = False  # held but not yet activated
+    wormhole_held: bool = False  # held but not yet fired
     # Hall of fame: only tracks score earned while 2+ players are present
     played_with_others: bool = False
     peak_score_with_others: int = 0
@@ -582,7 +613,8 @@ class Player:
             "powerup_remaining": round(max(0, self.powerup_until - current_time), 1) if self.active_powerup else 0,
             "mines_remaining": self.mines_remaining,
             "homing_missiles_remaining": self.homing_missiles_remaining,
-            "trail_held": self.trail_held
+            "trail_held": self.trail_held,
+            "wormhole_held": self.wormhole_held
         }
 
     def get_speed(self, current_time: float):
@@ -1150,6 +1182,8 @@ class GameState:
         self.powerup_orbs: Dict[str, PowerUpOrb] = {}
         self.mine_pickups: Dict[str, MinePickup] = {}
         self.mines: Dict[str, Mine] = {}
+        self.wormhole_portals: Dict[str, WormholePortal] = {}
+        self.wormhole_counter = 0
         self.trail_segments: list = []
         self.connections: Dict[str, any] = {}
         self.orb_counter = 0
@@ -1414,8 +1448,9 @@ class GameState:
 
         has_rapid_fire = player.active_powerup == "rapid_fire" and current_time < player.powerup_until
         has_homing = player.homing_missiles_remaining > 0
+        has_wormhole = player.wormhole_held
 
-        if not has_rapid_fire and current_time < player.shoot_cooldown_until:
+        if not has_rapid_fire and not has_wormhole and current_time < player.shoot_cooldown_until:
             return
 
         # Calculate direction
@@ -1428,6 +1463,24 @@ class GameState:
         # Normalize direction
         ndx = dx / distance
         ndy = dy / distance
+
+        # Wormhole: fire portal, no mass cost, no cooldown consumed
+        if has_wormhole:
+            player.wormhole_held = False
+            self.wormhole_counter += 1
+            portal_id = f"wormhole_{self.wormhole_counter}"
+            self.wormhole_portals[portal_id] = WormholePortal(
+                id=portal_id,
+                owner_id=player_id,
+                x=player.x + ndx * (player.radius + WORMHOLE_RADIUS + 2),
+                y=player.y + ndy * (player.radius + WORMHOLE_RADIUS + 2),
+                dx=ndx,
+                dy=ndy,
+                travel_remaining=WORMHOLE_TRAVEL_DIST,
+                traveling=True,
+                created_at=current_time
+            )
+            return
 
         # Cost mass (free with rapid fire/homing)
         if has_homing:
@@ -1591,6 +1644,7 @@ class GameState:
             player.active_powerup = ""
             player.powerup_until = 0
             player.trail_held = False
+            player.wormhole_held = False
 
     def _move_players(self, current_time: float):
         """Move players towards targets, handle bounds and wall collisions, apply shrink."""
@@ -1748,9 +1802,13 @@ class GameState:
                     if powerup_type == "homing_missiles":
                         player.homing_missiles_remaining = HOMING_MISSILES_AMMO
                     elif powerup_type == "trail":
-                        # Held item - only grant if not already holding one
-                        if not player.trail_held:
-                            player.trail_held = True
+                        # Swap: drop wormhole if held, take trail
+                        player.wormhole_held = False
+                        player.trail_held = True
+                    elif powerup_type == "wormhole":
+                        # Swap: drop trail if held, take wormhole
+                        player.trail_held = False
+                        player.wormhole_held = True
                     else:
                         player.active_powerup = powerup_type
                         player.powerup_until = current_time + POWERUP_DURATIONS[powerup_type]
@@ -2122,6 +2180,75 @@ class GameState:
         for i in reversed(sorted(set(segments_to_remove))):
             self.trail_segments.pop(i)
 
+    def _update_wormhole_portals(self, current_time: float):
+        """Move traveling portals, check player collisions (owner teleports, enemy takes damage)."""
+        portals_to_remove = []
+        for portal_id, portal in self.wormhole_portals.items():
+            # Move if still traveling
+            if portal.traveling:
+                step = min(WORMHOLE_SPEED, portal.travel_remaining)
+                portal.x += portal.dx * step
+                portal.y += portal.dy * step
+                portal.travel_remaining -= step
+                if portal.travel_remaining <= 0:
+                    portal.traveling = False
+
+            # Expire by lifetime
+            if current_time - portal.created_at > WORMHOLE_LIFETIME:
+                portals_to_remove.append(portal_id)
+                continue
+
+            # Check collisions with players
+            hit = False
+            for player in self.players.values():
+                if not player.alive:
+                    continue
+                dx = player.x - portal.x
+                dy = player.y - portal.y
+                combined = player.radius + WORMHOLE_RADIUS
+                if dx * dx + dy * dy >= combined * combined:
+                    continue
+
+                if player.id == portal.owner_id:
+                    # Owner enters - teleport to random exit location
+                    for _ in range(100):
+                        ex = random.uniform(50, WORLD_WIDTH - 50)
+                        ey = random.uniform(50, WORLD_HEIGHT - 50)
+                        dist_sq = (ex - portal.x) ** 2 + (ey - portal.y) ** 2
+                        if dist_sq >= WORMHOLE_MIN_EXIT_DIST ** 2:
+                            # Check not inside a wall
+                            inside_wall = False
+                            for wall in self.walls.values():
+                                if (wall.x <= ex <= wall.x + wall.width and
+                                        wall.y <= ey <= wall.y + wall.height):
+                                    inside_wall = True
+                                    break
+                            if not inside_wall:
+                                player.x = ex
+                                player.y = ey
+                                player.invincible_until = current_time + 1.0  # brief post-exit grace
+                                break
+                    hit = True
+                else:
+                    # Enemy enters - take damage, portal closes
+                    if not player.has_protection(current_time):
+                        owner = self.players.get(portal.owner_id)
+                        player.radius = max(MIN_RADIUS, player.radius - WORMHOLE_DAMAGE)
+                        if player.radius <= MIN_RADIUS:
+                            player.alive = False
+                            player.score = 0
+                            if owner:
+                                self.add_kill(owner.name, player.name)
+                    hit = True
+
+                if hit:
+                    portals_to_remove.append(portal_id)
+                    break
+
+        for portal_id in portals_to_remove:
+            if portal_id in self.wormhole_portals:
+                del self.wormhole_portals[portal_id]
+
     def tick(self):
         """Update game state for one tick."""
         current_time = time.time()
@@ -2135,6 +2262,7 @@ class GameState:
         self._update_critical_mass(current_time)
         self._update_powerups(current_time)
         self._update_trail_segments(current_time)
+        self._update_wormhole_portals(current_time)
         self.disaster_manager.tick(current_time)
         for player in self.players.values():
             if player.score > player.peak_score:
@@ -2175,6 +2303,7 @@ class GameState:
             "mine_pickups": self._mine_pickups_cache,
             "mines": [m.to_dict() for m in self.mines.values()],
             "projectiles": [p.to_dict() for p in self.projectiles.values()],
+            "wormhole_portals": [p.to_dict() for p in self.wormhole_portals.values()],
             "trail_segments": [{"x": round(s["x"], 1), "y": round(s["y"], 1), "color": s["color"],
                                  "ttl": round(s["expires_at"] - current_time, 2)} for s in self.trail_segments],
             "kill_feed": self.get_kill_feed(),

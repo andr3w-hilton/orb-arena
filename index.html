@@ -2543,8 +2543,28 @@
 
             // Detect Tron Trail pickup (trail_held goes false -> true)
             if (data.you && data.you.trail_held && state.you && !state.you.trail_held) {
-                state.powerupPopup = { text: 'TRON TRAIL', time: Date.now() };
+                const swapped = state.you.wormhole_held;
+                state.powerupPopup = { text: swapped ? 'TRON TRAIL (swapped)' : 'TRON TRAIL', time: Date.now() };
                 sfx.powerupPickup();
+            }
+
+            // Detect Wormhole pickup (wormhole_held goes false -> true)
+            if (data.you && data.you.wormhole_held && state.you && !state.you.wormhole_held) {
+                const swapped = state.you.trail_held;
+                state.powerupPopup = { text: swapped ? 'WORMHOLE (swapped)' : 'WORMHOLE', time: Date.now() };
+                sfx.powerupPickup();
+            }
+
+            // Detect wormhole teleport (large position jump while alive)
+            if (data.you && state.you && data.you.alive && state.you.alive) {
+                const dx = data.you.x - state.you.x;
+                const dy = data.you.y - state.you.y;
+                if (dx * dx + dy * dy > 200 * 200) {
+                    // Teleported - flash + exit portal animation
+                    state.wormholeExitEffect = { x: data.you.x, y: data.you.y, time: Date.now() };
+                    state.wormholeFlashUntil = Date.now() + 200;
+                    triggerScreenShake(4);
+                }
             }
 
             // Detect mine pickup (mines_remaining increases, up to max)
@@ -2636,6 +2656,7 @@
             state.powerupOrbs = data.powerup_orbs || [];
             state.minePickups = data.mine_pickups || [];
             state.mines = data.mines || [];
+            state.wormholePortals = data.wormhole_portals || [];
             state.trailSegments = data.trail_segments || [];
             state.killFeed = data.kill_feed || [];
             state.leaderboard = data.leaderboard;
@@ -3113,7 +3134,11 @@
         document.addEventListener('keydown', (e) => {
             if (e.code === 'Space' && state.playing && state.connectionMode !== 'spectate' && state.you && state.you.alive) {
                 e.preventDefault();
-                sendBoost();
+                if (state.you.wormhole_held) {
+                    sendWormhole();
+                } else {
+                    sendBoost();
+                }
             }
             // C = shoot toward mouse cursor (desktop)
             if (e.code === 'KeyC' && state.playing && state.connectionMode === 'player' && state.you && state.you.alive && !isTouchDevice) {
@@ -3206,6 +3231,15 @@
             if (state.you.homing_missiles_remaining > 0) sfx.homingShoot();
             else if (state.you.active_powerup === 'rapid_fire') sfx.rapidShoot();
             else sfx.shoot();
+        }
+
+        // Send wormhole (fires via shoot action, bypasses shoot cooldown guard)
+        function sendWormhole() {
+            if (!state.connected || state.connectionMode === 'spectate' || !state.you || !state.you.wormhole_held) return;
+            const worldX = mouseX / currentZoom + state.camera.x;
+            const worldY = mouseY / currentZoom + state.camera.y;
+            ws.send(JSON.stringify({ type: 'shoot', x: worldX, y: worldY }));
+            sfx.powerupPickup(); // temporary until we have a dedicated sfx
         }
 
         // Send boost command
@@ -3314,7 +3348,20 @@
         };
 
         function updatePowerUpHud() {
-            if (!state.you || !state.you.alive || !state.you.active_powerup) {
+            if (!state.you || !state.you.alive) {
+                powerupHud.style.display = 'none';
+                return;
+            }
+            // Wormhole held - show as ready-to-fire indicator
+            if (state.you.wormhole_held) {
+                powerupHud.style.display = 'block';
+                powerupHud.style.background = 'rgba(0, 40, 35, 0.85)';
+                powerupHud.style.borderColor = 'rgba(0, 210, 170, 0.7)';
+                powerupHud.style.color = '#00e0b0';
+                powerupHud.textContent = 'WORMHOLE - READY';
+                return;
+            }
+            if (!state.you.active_powerup) {
                 powerupHud.style.display = 'none';
                 return;
             }
@@ -3875,6 +3922,19 @@
             // Draw trail segments (Tron power-up)
             drawTrailSegments();
 
+            // Draw wormhole portals
+            (state.wormholePortals || []).forEach(p => drawWormholePortal(p));
+
+            // Draw wormhole exit effect (brief animation at teleport destination)
+            if (state.wormholeExitEffect) {
+                const age = Date.now() - state.wormholeExitEffect.time;
+                if (age < 800) {
+                    drawWormholeExit(state.wormholeExitEffect.x, state.wormholeExitEffect.y, age / 800);
+                } else {
+                    state.wormholeExitEffect = null;
+                }
+            }
+
             // Draw projectiles
             state.projectiles.forEach(proj => drawProjectile(proj));
 
@@ -3922,6 +3982,13 @@
 
             // Restore zoom transform before HUD (HUD is screen-space)
             ctx.restore();
+
+            // Wormhole teleport flash (screen-space, after zoom restore)
+            if (state.wormholeFlashUntil && Date.now() < state.wormholeFlashUntil) {
+                const flashProgress = (state.wormholeFlashUntil - Date.now()) / 200;
+                ctx.fillStyle = `rgba(0, 230, 180, ${flashProgress * 0.5})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
 
             // Draw HUD elements
             drawKillFeed();
@@ -4299,6 +4366,124 @@
                 ctx.fill();
                 ctx.restore();
             }
+        }
+
+        function drawWormholePortal(portal) {
+            const screenX = portal.x - state.camera.x;
+            const screenY = portal.y - state.camera.y;
+            const r = 22;
+            if (isOffScreen(screenX, screenY, r + 40)) return;
+
+            const t = Date.now() / 1000;
+
+            // Outer glow - teal radial gradient
+            const glowGrad = ctx.createRadialGradient(screenX, screenY, r, screenX, screenY, r + 30);
+            glowGrad.addColorStop(0, 'rgba(0, 200, 160, 0.25)');
+            glowGrad.addColorStop(1, 'transparent');
+            ctx.fillStyle = glowGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r + 30, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Swirling accretion rings (teal, 2 rings - smaller than the big black hole)
+            for (let i = 0; i < 2; i++) {
+                const ringR = r * (1.4 + i * 0.7);
+                const alpha = 0.4 - i * 0.1;
+                ctx.strokeStyle = `rgba(0, 210, 170, ${alpha})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.ellipse(screenX, screenY, ringR, ringR * 0.4,
+                    t * (1.5 + i * 0.4) + i, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            // Black event horizon core
+            const coreGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, r);
+            coreGrad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+            coreGrad.addColorStop(0.7, 'rgba(0, 0, 0, 0.95)');
+            coreGrad.addColorStop(1, 'rgba(0, 40, 30, 0.8)');
+            ctx.fillStyle = coreGrad;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Bright teal accretion ring at edge
+            ctx.strokeStyle = `rgba(0, 230, 180, ${0.6 + Math.sin(t * 6) * 0.2})`;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r + 1, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Lensing dots (teal)
+            for (let i = 0; i < 6; i++) {
+                const angle = t * 2.5 + i * Math.PI / 3;
+                const dist = r + 5 + Math.sin(t * 3 + i) * 3;
+                ctx.fillStyle = `rgba(0, 220, 180, ${0.7 + Math.sin(t * 4 + i) * 0.3})`;
+                ctx.beginPath();
+                ctx.arc(screenX + Math.cos(angle) * dist, screenY + Math.sin(angle) * dist, 2, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Motion trail if traveling
+            if (portal.traveling) {
+                const trailGrad = ctx.createLinearGradient(
+                    screenX, screenY,
+                    screenX - portal.dx * 30, screenY - portal.dy * 30
+                );
+                trailGrad.addColorStop(0, 'rgba(0, 200, 160, 0.4)');
+                trailGrad.addColorStop(1, 'transparent');
+                ctx.strokeStyle = trailGrad;
+                ctx.lineWidth = r * 0.8;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(screenX, screenY);
+                ctx.lineTo(screenX - portal.dx * 30, screenY - portal.dy * 30);
+                ctx.stroke();
+            }
+        }
+
+        function drawWormholeExit(worldX, worldY, progress) {
+            // progress: 0 = just opened, 1 = closing
+            const screenX = worldX - state.camera.x;
+            const screenY = worldY - state.camera.y;
+            const r = 22;
+            if (isOffScreen(screenX, screenY, r + 60)) return;
+
+            const t = Date.now() / 1000;
+            // Pulse outward then fade
+            const scale = 1 + progress * 1.5;
+            const alpha = 1 - progress;
+
+            ctx.save();
+            ctx.globalAlpha = alpha;
+
+            // Expanding ring burst
+            ctx.strokeStyle = `rgba(0, 230, 180, 0.9)`;
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r * scale, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Secondary expanding ring
+            ctx.strokeStyle = `rgba(100, 255, 220, 0.5)`;
+            ctx.lineWidth = 1.5;
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, r * scale * 1.6, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Brief core flash
+            if (progress < 0.3) {
+                const flashAlpha = (0.3 - progress) / 0.3;
+                const coreGrad = ctx.createRadialGradient(screenX, screenY, 0, screenX, screenY, r * 1.5);
+                coreGrad.addColorStop(0, `rgba(200, 255, 240, ${flashAlpha})`);
+                coreGrad.addColorStop(1, 'transparent');
+                ctx.fillStyle = coreGrad;
+                ctx.beginPath();
+                ctx.arc(screenX, screenY, r * 1.5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            ctx.restore();
         }
 
         function drawProjectile(proj) {
@@ -4982,7 +5167,7 @@
             const x = 20;
             const y = canvas.height - 60;
 
-            const boostLabel = state.you.trail_held ? 'BOOST+TRAIL' : 'BOOST';
+            const boostLabel = state.you.wormhole_held ? 'WORMHOLE' : state.you.trail_held ? 'BOOST+TRAIL' : 'BOOST';
             drawHudBar(x, y, 180, state.you.boost_ready, '#ff8c00', 'rgba(255,140,0,0.5)', boostLabel);
 
             if (state.you.is_boosting) {
@@ -5249,6 +5434,31 @@
                     ctx.lineTo(tx + Math.cos(sa) * 13, ty + Math.sin(sa) * 13);
                 }
                 ctx.stroke();
+            }
+
+            // Wormhole indicator (held, not yet fired) - teal mini-vortex orbiting player
+            if (player.wormhole_held) {
+                const angle = Date.now() / 800 + Math.PI * 0.5;
+                const wx = screenX + Math.cos(angle) * player.radius * 1.5;
+                const wy = screenY + Math.sin(angle) * player.radius * 1.5;
+                const t = Date.now() / 1000;
+                // Black core
+                ctx.fillStyle = '#000000';
+                ctx.beginPath();
+                ctx.arc(wx, wy, 6, 0, Math.PI * 2);
+                ctx.fill();
+                // Teal ring
+                ctx.strokeStyle = `rgba(0, 210, 170, ${0.7 + Math.sin(t * 5) * 0.3})`;
+                ctx.lineWidth = 1.5;
+                ctx.beginPath();
+                ctx.arc(wx, wy, 9, 0, Math.PI * 2);
+                ctx.stroke();
+                // Tiny lensing dot
+                const dotAngle = t * 4;
+                ctx.fillStyle = 'rgba(0, 220, 180, 0.9)';
+                ctx.beginPath();
+                ctx.arc(wx + Math.cos(dotAngle) * 9, wy + Math.sin(dotAngle) * 9, 2, 0, Math.PI * 2);
+                ctx.fill();
             }
 
             // Mine indicators (ammo-based)

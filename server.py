@@ -1443,12 +1443,14 @@ class GameState:
 
         if not player.alive:
             return
-        if player.radius < PROJECTILE_MIN_RADIUS:
-            return
 
         has_rapid_fire = player.active_powerup == "rapid_fire" and current_time < player.powerup_until
         has_homing = player.homing_missiles_remaining > 0
         has_wormhole = player.wormhole_held
+
+        # Wormhole bypasses the size check (no mass cost, no projectile)
+        if not has_wormhole and player.radius < PROJECTILE_MIN_RADIUS:
+            return
 
         if not has_rapid_fire and not has_wormhole and current_time < player.shoot_cooldown_until:
             return

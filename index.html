@@ -3107,7 +3107,7 @@
             // Double-tap detection for boost
             const currentTime = Date.now();
             if (currentTime - lastTapTime < DOUBLE_TAP_DELAY) {
-                sendBoost();
+                if (state.you && state.you.wormhole_held) sendWormhole(); else sendBoost();
                 lastTapTime = 0; // Reset to prevent triple-tap
             } else {
                 lastTapTime = currentTime;
@@ -3171,7 +3171,7 @@
             e.preventDefault();
             e.stopPropagation();
             boostBtn.classList.add('pressed');
-            sendBoost();
+            if (state.you && state.you.wormhole_held) sendWormhole(); else sendBoost();
         }, { passive: false });
 
         boostBtn.addEventListener('touchend', (e) => {
@@ -3183,7 +3183,7 @@
         // Also support click for testing on desktop
         boostBtn.addEventListener('click', (e) => {
             e.preventDefault();
-            sendBoost();
+            if (state.you && state.you.wormhole_held) sendWormhole(); else sendBoost();
         });
 
         // Click to shoot (desktop)
@@ -3263,7 +3263,11 @@
             }
 
             const hasTrail = state.you.trail_held;
-            if (state.you.is_boosting) {
+            const hasWormhole = state.you.wormhole_held;
+            if (hasWormhole) {
+                boostBtn.classList.remove('boosting', 'cooldown');
+                boostBtn.textContent = 'WORMHOLE';
+            } else if (state.you.is_boosting) {
                 boostBtn.classList.add('boosting');
                 boostBtn.classList.remove('cooldown');
                 boostBtn.textContent = 'BOOST!';

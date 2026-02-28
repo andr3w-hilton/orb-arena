@@ -3838,6 +3838,10 @@
         }
 
         function render() {
+            // Reset transform to identity each frame - prevents accumulated zoom if a previous
+            // frame threw an exception before ctx.restore() was reached
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+
             // Clear canvas
             ctx.fillStyle = '#040404';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -4379,6 +4383,8 @@
             const r = 22;
             if (isOffScreen(screenX, screenY, r + 40)) return;
 
+            ctx.save();
+
             const t = Date.now() / 1000;
 
             // Outer glow - teal radial gradient
@@ -4390,15 +4396,19 @@
             ctx.arc(screenX, screenY, r + 30, 0, Math.PI * 2);
             ctx.fill();
 
-            // Swirling accretion rings (teal, 2 rings - smaller than the big black hole)
+            // Swirling accretion rings (teal, 2 rings - rotating via ctx transform)
             for (let i = 0; i < 2; i++) {
                 const ringR = r * (1.4 + i * 0.7);
                 const alpha = 0.4 - i * 0.1;
                 ctx.strokeStyle = `rgba(0, 210, 170, ${alpha})`;
                 ctx.lineWidth = 1.5;
+                ctx.save();
+                ctx.translate(screenX, screenY);
+                ctx.rotate(t * (1.5 + i * 0.4) + i);
+                ctx.scale(1, 0.4);
                 ctx.beginPath();
-                ctx.ellipse(screenX, screenY, ringR, ringR * 0.4,
-                    t * (1.5 + i * 0.4) + i, 0, Math.PI * 2);
+                ctx.arc(0, 0, ringR, 0, Math.PI * 2);
+                ctx.restore();
                 ctx.stroke();
             }
 
@@ -4445,6 +4455,8 @@
                 ctx.lineTo(screenX - portal.dx * 30, screenY - portal.dy * 30);
                 ctx.stroke();
             }
+
+            ctx.restore();
         }
 
         function drawWormholeExit(worldX, worldY, progress) {

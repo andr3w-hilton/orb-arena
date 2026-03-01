@@ -1,5 +1,17 @@
 # Orb Arena - Changelog
 
+## v1.4.0 - Wormhole
+
+### New Power-up: Wormhole
+- Pick up a **Wormhole** orb to hold a portal charge - shown as a teal vortex orbiting your player
+- Fire it using the boost button (or Space) - the portal launches in your aim direction, travels 250px ahead, then stops and waits
+- Walk into the portal to teleport 600px+ to a random location on the map - instant repositioning
+- Enemies who touch the portal take 15 radius damage and close it - double as a trap or area denial tool
+- Portal closes on its own after 6 seconds if unused
+- Available in multiplayer and Hunter Seeker
+
+---
+
 ## v1.3.0 - Hunter Seeker
 
 ### New Challenge: Hunter Seeker

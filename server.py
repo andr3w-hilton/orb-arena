@@ -229,7 +229,7 @@ BOSS_SHOT_SPEED = 18.0
 BOSS_SHOT_DAMAGE = 15
 BOSS_SHOT_RADIUS = 8
 BOSS_SHOT_LIFETIME = 4.0
-BOSS_HUNT_POWERUP_TYPES = ["shield", "rapid_fire", "speed_force", "phantom", "homing_missiles"]
+BOSS_HUNT_POWERUP_TYPES = ["shield", "rapid_fire", "speed_force", "phantom", "homing_missiles", "wormhole"]
 
 # Corner-buster precision strike configuration
 CAMP_TRIGGER_TIME = 10.0        # seconds boss cannot close distance before strike initiates
@@ -2839,6 +2839,9 @@ class BossHuntGame(GameState):
                 powerup_type = random.choice(BOSS_HUNT_POWERUP_TYPES)
                 if powerup_type == "homing_missiles":
                     player.homing_missiles_remaining = HOMING_MISSILES_AMMO
+                elif powerup_type == "wormhole":
+                    player.trail_held = False
+                    player.wormhole_held = True
                 else:
                     player.active_powerup = powerup_type
                     player.powerup_until = current_time + POWERUP_DURATIONS.get(powerup_type, 5.0)

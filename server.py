@@ -1468,9 +1468,10 @@ class GameState:
         ndy = dy / distance
 
         # Wormhole: fire portal, no mass cost, no cooldown consumed
-        # Requires explicit wormhole=True flag to prevent race condition where
-        # a regular shoot message accidentally consumes a freshly-picked-up wormhole
-        if has_wormhole and wormhole:
+        # If the client flagged this as a wormhole shot, never fall through to projectile
+        if wormhole:
+            if not has_wormhole:
+                return  # stale client state - ignore, do not fire a projectile
             player.wormhole_held = False
             self.wormhole_counter += 1
             portal_id = f"wormhole_{self.wormhole_counter}"

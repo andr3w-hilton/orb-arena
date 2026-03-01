@@ -3180,9 +3180,10 @@
             boostBtn.classList.remove('pressed');
         }, { passive: false });
 
-        // Also support click for testing on desktop
+        // Also support click for testing on desktop (touch devices handled by touchstart)
         boostBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            if (isTouchDevice) return;
             if (state.you && state.you.wormhole_held) sendWormhole(); else sendBoost();
         });
 
@@ -3217,6 +3218,7 @@
 
         shootBtn.addEventListener('click', (e) => {
             e.preventDefault();
+            if (isTouchDevice) return; // touchstart already handled
             if (state.you && state.you.alive) {
                 const worldX = mouseX / currentZoom + state.camera.x;
                 const worldY = mouseY / currentZoom + state.camera.y;
@@ -3227,6 +3229,7 @@
         // Send shoot command
         function sendShoot(targetX, targetY) {
             if (!state.connected || state.connectionMode === 'spectate' || !state.you) return;
+            if (state.you.wormhole_held) return; // never consume wormhole via regular shoot
             if (!state.you.shoot_ready && state.you.active_powerup !== 'rapid_fire') return;
             ws.send(JSON.stringify({ type: 'shoot', x: targetX, y: targetY }));
             if (state.you.homing_missiles_remaining > 0) sfx.homingShoot();
@@ -3239,7 +3242,7 @@
             if (!state.connected || state.connectionMode === 'spectate' || !state.you || !state.you.wormhole_held) return;
             const worldX = mouseX / currentZoom + state.camera.x;
             const worldY = mouseY / currentZoom + state.camera.y;
-            ws.send(JSON.stringify({ type: 'shoot', x: worldX, y: worldY }));
+            ws.send(JSON.stringify({ type: 'shoot', x: worldX, y: worldY, wormhole: true }));
             sfx.powerupPickup(); // temporary until we have a dedicated sfx
         }
 

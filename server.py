@@ -77,7 +77,7 @@ POWERUP_DURATIONS = {"shield": 5.0, "rapid_fire": 5.0, "magnet": 8.0, "phantom":
 HOMING_MISSILES_AMMO = 3  # discrete shots granted on pickup
 
 # Wormhole power-up configuration
-WORMHOLE_SPEED = 12           # portal travel speed (px/tick)
+WORMHOLE_SPEED_BONUS = 4      # portal travels this many px/tick faster than the firing player
 WORMHOLE_TRAVEL_DIST = 250    # px the portal travels before stopping dead
 WORMHOLE_LIFETIME = 6.0       # seconds before portal closes on its own
 WORMHOLE_DAMAGE = 15          # radius damage dealt to enemy who enters portal
@@ -427,6 +427,7 @@ class WormholePortal:
     y: float
     dx: float           # normalized travel direction
     dy: float
+    speed: float = 16.0
     travel_remaining: float = WORMHOLE_TRAVEL_DIST
     traveling: bool = True
     created_at: float = 0.0
@@ -1434,7 +1435,7 @@ class GameState:
             player.active_powerup = "trail"
             player.powerup_until = current_time + POWERUP_DURATIONS["trail"]
 
-    def shoot(self, player_id: str, target_x: float, target_y: float):
+    def shoot(self, player_id: str, target_x: float, target_y: float, wormhole: bool = False):
         """Fire a projectile from a player toward a target position."""
         if player_id not in self.players:
             return
@@ -1467,10 +1468,13 @@ class GameState:
         ndy = dy / distance
 
         # Wormhole: fire portal, no mass cost, no cooldown consumed
-        if has_wormhole:
+        # Requires explicit wormhole=True flag to prevent race condition where
+        # a regular shoot message accidentally consumes a freshly-picked-up wormhole
+        if has_wormhole and wormhole:
             player.wormhole_held = False
             self.wormhole_counter += 1
             portal_id = f"wormhole_{self.wormhole_counter}"
+            portal_speed = player.get_speed(current_time) + WORMHOLE_SPEED_BONUS
             self.wormhole_portals[portal_id] = WormholePortal(
                 id=portal_id,
                 owner_id=player_id,
@@ -1478,6 +1482,7 @@ class GameState:
                 y=player.y + ndy * (player.radius + WORMHOLE_RADIUS + 2),
                 dx=ndx,
                 dy=ndy,
+                speed=portal_speed,
                 travel_remaining=WORMHOLE_TRAVEL_DIST,
                 traveling=True,
                 created_at=current_time
@@ -2188,7 +2193,7 @@ class GameState:
         for portal_id, portal in self.wormhole_portals.items():
             # Move if still traveling
             if portal.traveling:
-                step = min(WORMHOLE_SPEED, portal.travel_remaining)
+                step = min(portal.speed, portal.travel_remaining)
                 portal.x += portal.dx * step
                 portal.y += portal.dy * step
                 portal.travel_remaining -= step
@@ -2212,6 +2217,9 @@ class GameState:
                     continue
 
                 if player.id == portal.owner_id:
+                    # Owner can only enter after portal has stopped traveling
+                    if portal.traveling:
+                        continue
                     # Owner enters - teleport to random exit location
                     for _ in range(100):
                         ex = random.uniform(50, WORLD_WIDTH - 50)
@@ -3558,7 +3566,8 @@ async def handle_client(websocket):
                                 challenge_game.shoot(
                                     player_id,
                                     safe_float(data.get("x", 0)),
-                                    safe_float(data.get("y", 0))
+                                    safe_float(data.get("y", 0)),
+                                    wormhole=bool(data.get("wormhole", False))
                                 )
                             elif msg_type == "place_mine":
                                 challenge_game.place_mine(player_id)
@@ -3612,7 +3621,8 @@ async def handle_client(websocket):
                             game.shoot(
                                 player_id,
                                 safe_float(data.get("x", 0)),
-                                safe_float(data.get("y", 0))
+                                safe_float(data.get("y", 0)),
+                                wormhole=bool(data.get("wormhole", False))
                             )
 
                         elif msg_type == "place_mine":

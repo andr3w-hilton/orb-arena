@@ -4403,16 +4403,16 @@
             for (let i = 0; i < 2; i++) {
                 const ringR = r * (1.4 + i * 0.7);
                 const alpha = 0.4 - i * 0.1;
+                ctx.save();
                 ctx.strokeStyle = `rgba(0, 210, 170, ${alpha})`;
                 ctx.lineWidth = 1.5;
-                ctx.save();
                 ctx.translate(screenX, screenY);
                 ctx.rotate(t * (1.5 + i * 0.4) + i);
                 ctx.scale(1, 0.4);
                 ctx.beginPath();
                 ctx.arc(0, 0, ringR, 0, Math.PI * 2);
-                ctx.restore();
                 ctx.stroke();
+                ctx.restore();
             }
 
             // Black event horizon core

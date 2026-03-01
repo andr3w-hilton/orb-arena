@@ -438,6 +438,8 @@ class WormholePortal:
             "owner_id": self.owner_id,
             "x": round(self.x, 1),
             "y": round(self.y, 1),
+            "dx": round(self.dx, 4),
+            "dy": round(self.dy, 4),
             "traveling": self.traveling
         }
 

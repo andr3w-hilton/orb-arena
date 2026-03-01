@@ -1222,8 +1222,13 @@ class GameState:
         self.disaster_manager = DisasterManager(self)
 
     def generate_color(self) -> str:
-        """Generate a vibrant random color."""
-        hue = random.random()
+        """Generate a vibrant random color, avoiding the green band reserved for energy orbs."""
+        # Energy orbs use hue 0.25-0.40 (green). Exclude 0.20-0.45 with a small buffer.
+        # Map a uniform random value onto the remaining 0.75 of the hue wheel.
+        GREEN_START, GREEN_END = 0.20, 0.45
+        hue = random.random() * (1.0 - (GREEN_END - GREEN_START))
+        if hue >= GREEN_START:
+            hue += GREEN_END - GREEN_START
         saturation = 0.7 + random.random() * 0.3
         value = 0.8 + random.random() * 0.2
         r, g, b = colorsys.hsv_to_rgb(hue, saturation, value)

@@ -1,0 +1,42 @@
+name: Deploy Orb Arena
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DROPLET_SSH_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "StrictHostKeyChecking=no" >> ~/.ssh/config
+
+      - name: Sync files to droplet
+        run: |
+          rsync -az --delete \
+            --exclude='.git' \
+            --exclude='__pycache__' \
+            --exclude='*.pyc' \
+            --exclude='*.bak' \
+            --exclude='docs/' \
+            --exclude='playground/' \
+            --exclude='CLAUDE.md' \
+            --exclude='TODO.md' \
+            --exclude='*.subdomain.conf' \
+            --exclude='sound-test.html' \
+            --exclude='data/' \
+            ./ \
+            root@${{ secrets.DROPLET_HOST }}:/root/site/orb-arena/
+
+      - name: Rebuild Docker container
+        run: |
+          ssh root@${{ secrets.DROPLET_HOST }} "bash -i -c 'rebuild-game'"

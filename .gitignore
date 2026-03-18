@@ -3,6 +3,7 @@ __pycache__/
 *.pyc
 *.pyo
 TODO.md
+ARCHITECTURE.md
 scores.json
 *.env
 secrets.json

@@ -18,24 +18,24 @@ function connect(onConnected) {
     ws.onclose = () => {
         OrbArena.state.state.connected = false;
         if (OrbArena.state.state.playing) {
-            goToMainMenu();
+            OrbArena.ui.goToMainMenu();
             return;
         }
         OrbArena.state.state.playing = false;
 
-        playBtn.disabled = false;
-        playBtn.textContent = 'DEPLOY';
-        spectateBtn.disabled = false;
-        spectateBtn.textContent = 'WATCH';
+        document.getElementById('play-btn').disabled = false;
+        document.getElementById('play-btn').textContent = 'DEPLOY';
+        document.getElementById('spectate-btn').disabled = false;
+        document.getElementById('spectate-btn').textContent = 'WATCH';
     };
 
     ws.onerror = () => {
         OrbArena.state.state.connected = false;
 
-        playBtn.disabled = false;
-        playBtn.textContent = 'DEPLOY';
-        spectateBtn.disabled = false;
-        spectateBtn.textContent = 'WATCH';
+        document.getElementById('play-btn').disabled = false;
+        document.getElementById('play-btn').textContent = 'DEPLOY';
+        document.getElementById('spectate-btn').disabled = false;
+        document.getElementById('spectate-btn').textContent = 'WATCH';
     };
 
     ws.onmessage = (event) => {
@@ -90,7 +90,7 @@ function handleMessage(data) {
             break;
 
         case 'challenge_result':
-            showChallengeResult(data);
+            OrbArena.ui.showChallengeResult(data);
             break;
     }
 }
@@ -100,18 +100,18 @@ function joinGame(mode = 'player', challenge = null) {
 
     if (!OrbArena.state.state.connected) {
         // Connect first, then join when connected
-        playBtn.disabled = true;
-        spectateBtn.disabled = true;
-        challengeBtn.disabled = true;
-        playBtn.textContent = 'CONNECTING...';
+        document.getElementById('play-btn').disabled = true;
+        document.getElementById('spectate-btn').disabled = true;
+        document.getElementById('challenge-btn').disabled = true;
+        document.getElementById('play-btn').textContent = 'CONNECTING...';
         connect(() => {
-            const name = nameInput.value.trim() || 'Anonymous';
+            const name = document.getElementById('name-input').value.trim() || 'Anonymous';
             const msg = { type: 'join', name, mode };
             if (challenge) msg.challenge = challenge;
             ws.send(JSON.stringify(msg));
         });
     } else {
-        const name = nameInput.value.trim() || 'Anonymous';
+        const name = document.getElementById('name-input').value.trim() || 'Anonymous';
         const msg = { type: 'join', name, mode };
         if (challenge) msg.challenge = challenge;
         ws.send(JSON.stringify(msg));
@@ -155,6 +155,7 @@ function sendShoot(targetX, targetY) {
     const state = OrbArena.state.state;
     if (!state.connected || state.connectionMode === 'spectate' || !state.you) return;
     if (state.you.wormhole_held) return; // never consume wormhole via regular shoot
+    if (state.you.radius < OrbArena.config.PROJECTILE_MIN_RADIUS) return; // too small to shoot
     if (!state.you.shoot_ready && state.you.active_powerup !== 'rapid_fire') return;
     ws.send(JSON.stringify({ type: 'shoot', x: targetX, y: targetY }));
     if (state.you.homing_missiles_remaining > 0) OrbArena.audio.sfx.homingShoot();

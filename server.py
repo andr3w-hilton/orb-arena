@@ -3285,6 +3285,9 @@ async def broadcast_state():
                     if not player:
                         continue
                     you_json = json.dumps(player.to_dict(current_time))
+                    pong_t = game.pending_pongs.pop(client_id, None)
+                    if pong_t is not None:
+                        you_json = you_json[:-1] + f',"_pong_t":{pong_t}}}'
                     message = shared_json_prefix + you_json + '}'
 
                 await asyncio.wait_for(
@@ -3646,7 +3649,7 @@ async def handle_client(websocket):
                             game.disaster_manager.start_test_cycle(time.time())
 
                         elif msg_type == "ping":
-                            await websocket.send(json.dumps({"type": "pong", "t": data.get("t", 0)}))
+                            game.pending_pongs[player_id] = data.get("t", 0)
 
                     except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                         pass  # Silently drop malformed messages

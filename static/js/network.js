@@ -105,11 +105,8 @@ function handleMessage(data) {
             break;
 
         case 'state':
+            if (data.you && data.you._pong_t) updatePingDisplay(Date.now() - data.you._pong_t);
             OrbArena.ui.handleStateUpdate(data);
-            break;
-
-        case 'pong':
-            updatePingDisplay(Date.now() - data.t);
             break;
 
         case 'challenge_result':

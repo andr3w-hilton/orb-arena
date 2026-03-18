@@ -545,5 +545,5 @@ OrbArena.audio = {
     stopDisasterLoop,
     get disasterLoopTimer() { return disasterLoopTimer; },
     set disasterLoopTimer(v) { disasterLoopTimer = v; },
-    get audioCtx() { return audioCtx; },
+    get audioCtx() { return actx(); },
 };

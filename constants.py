@@ -330,7 +330,3 @@ TURRET_MISSILE_LIFETIME = 8.0      # longer than normal - player is far away
 TURRET_MISSILE_SPEED = 18
 TURRET_MISSILE_TRACKING = 0.12
 
-# Network
-MAX_CLIENTS = 50
-RATE_LIMIT_WINDOW = 1.0   # seconds
-RATE_LIMIT_MAX_MESSAGES = 60

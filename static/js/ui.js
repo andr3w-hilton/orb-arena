@@ -397,4 +397,199 @@ function respawn() {
     hideDeathScreen();
 }
 
-// ── PLACEHOLDER_UI_PART2 ──
+function openChallengeScreen() {
+    startScreen.style.display = 'none';
+    challengeScreen.style.display = 'flex';
+    fetch('/api/challenge/scores')
+        .then(r => r.json())
+        .then(scores => {
+            const el = document.getElementById('cs-missile-magnet-score');
+            if (scores && scores.length > 0) {
+                el.textContent = `${scores[0].name} — ${scores[0].time}s`;
+            } else {
+                el.textContent = '--';
+            }
+        })
+        .catch(() => {});
+    fetch('/api/rally/scores')
+        .then(r => r.json())
+        .then(scores => {
+            const el = document.getElementById('cs-rally-score');
+            if (scores && scores.length > 0) {
+                el.textContent = `${scores[0].name} — ${scores[0].time}s`;
+            } else {
+                el.textContent = '--';
+            }
+        })
+        .catch(() => {});
+    fetch('/api/boss/scores')
+        .then(r => r.json())
+        .then(scores => {
+            const el = document.getElementById('cs-boss-hunt-score');
+            if (scores && scores.length > 0) {
+                el.textContent = `${scores[0].name} — ${scores[0].time}s`;
+            } else {
+                el.textContent = '--';
+            }
+        })
+        .catch(() => {});
+}
+
+function closeChallengeScreen() {
+    challengeScreen.style.display = 'none';
+    startScreen.style.display = 'flex';
+}
+
+function goToMainMenu() {
+    const state = OrbArena.state.state;
+    const name = (state.you && state.you.name) || nameInput.value.trim();
+    document.body.classList.remove('in-game');
+    deathScreen.style.display = 'none';
+    challengeResult.style.display = 'none';
+    hud.style.display = 'none';
+    leaderboard.style.display = 'none';
+    gameMuteBtn.style.display = 'none';
+    OrbArena.render.canvas.style.display = 'none';
+    minimap.style.display = 'none';
+    document.getElementById('boost-btn').style.display = 'none';
+    document.getElementById('shoot-btn').style.display = 'none';
+    document.getElementById('mine-btn').style.display = 'none';
+    document.getElementById('disaster-hud').style.display = 'none';
+    startScreen.style.display = 'flex';
+    if (name && name !== 'Anonymous') nameInput.value = name;
+    if (OrbArena.network.ws) { OrbArena.network.ws.close(); OrbArena.network.ws = null; }
+    state.connected = false;
+    state.playing = false;
+    state.boss = null;
+    OrbArena.state.currentZoom = OrbArena.render.getZoomForRadius(20);
+    OrbArena.state.targetZoom = OrbArena.state.currentZoom;
+    state.challengeData = null;
+    playBtn.disabled = false;
+    spectateBtn.disabled = false;
+    challengeBtn.disabled = false;
+    playBtn.textContent = 'DEPLOY';
+}
+
+function replayChallengeGame() {
+    const state = OrbArena.state.state;
+    const name = (state.you && state.you.name) || nameInput.value.trim() || 'Anonymous';
+    const challenge = state.challengeName || 'missile_magnet';
+    nameInput.value = name;
+    challengeResult.style.display = 'none';
+    if (OrbArena.network.ws && OrbArena.network.ws.readyState !== WebSocket.CLOSED) {
+        const origOnClose = OrbArena.network.ws.onclose;
+        OrbArena.network.ws.onclose = (e) => {
+            if (origOnClose) origOnClose(e);
+            OrbArena.network.joinGame('challenge', challenge);
+        };
+        OrbArena.network.ws.close();
+    } else {
+        state.connected = false;
+        OrbArena.network.joinGame('challenge', challenge);
+    }
+}
+
+// ── Event Listeners ──
+
+// Load Hall of Fame on start screen
+(function loadHoF() {
+    fetch('/api/alltime/scores')
+        .then(r => r.json())
+        .then(scores => {
+            const list = document.getElementById('start-hof-list');
+            if (!scores || scores.length === 0) {
+                list.innerHTML = '<li class="hof-empty">No scores yet - be the first!</li>';
+                return;
+            }
+            list.innerHTML = scores.map((s, i) =>
+                `<li>
+                    <span class="hof-rank">#${i + 1}</span>
+                    <span class="hof-name">${s.name}</span>
+                    <span class="hof-score">${s.score}</span>
+                </li>`
+            ).join('');
+        })
+        .catch(() => {
+            document.getElementById('start-hof-list').innerHTML =
+                '<li class="hof-empty">-</li>';
+        });
+})();
+
+// Poll player count on start screen
+(function pollStatus() {
+    const statusEl = document.getElementById('player-status');
+    const textEl = document.getElementById('player-status-text');
+    function updateStatus() {
+        fetch('/api/status')
+            .then(r => r.json())
+            .then(data => {
+                const n = data.players || 0;
+                if (n === 0) {
+                    statusEl.classList.remove('has-players');
+                    textEl.textContent = 'No players online';
+                } else if (n === 1) {
+                    statusEl.classList.add('has-players');
+                    textEl.textContent = '1 player online';
+                } else {
+                    statusEl.classList.add('has-players');
+                    textEl.textContent = `${n} players online`;
+                }
+            })
+            .catch(() => {
+                statusEl.classList.remove('has-players');
+                textEl.textContent = 'Server offline';
+            });
+    }
+    updateStatus();
+    setInterval(updateStatus, 5000);
+})();
+
+document.querySelectorAll('.guide-card h3').forEach(h3 => {
+    h3.addEventListener('click', () => {
+        h3.closest('.guide-card').classList.toggle('collapsed');
+    });
+});
+
+playBtn.addEventListener('click', () => OrbArena.network.joinGame('player'));
+spectateBtn.addEventListener('click', () => OrbArena.network.joinGame('spectate'));
+challengeBtn.addEventListener('click', openChallengeScreen);
+document.getElementById('cs-back-btn').addEventListener('click', closeChallengeScreen);
+document.getElementById('cs-missile-magnet').addEventListener('click', () => {
+    challengeScreen.style.display = 'none';
+    OrbArena.network.joinGame('challenge', 'missile_magnet');
+});
+document.getElementById('cs-rally-run').addEventListener('click', () => {
+    challengeScreen.style.display = 'none';
+    OrbArena.network.joinGame('challenge', 'rally_run');
+});
+document.getElementById('cs-boss-hunt').addEventListener('click', () => {
+    challengeScreen.style.display = 'none';
+    OrbArena.network.joinGame('challenge', 'boss_hunt');
+});
+nameInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') OrbArena.network.joinGame('player');
+});
+respawnBtn.addEventListener('click', respawn);
+document.getElementById('challenge-play-again').addEventListener('click', replayChallengeGame);
+document.getElementById('death-menu-btn').addEventListener('click', goToMainMenu);
+document.getElementById('challenge-menu-btn').addEventListener('click', goToMainMenu);
+
+document.addEventListener('visibilitychange', () => {
+    const state = OrbArena.state.state;
+    if (document.visibilityState === 'visible' && state.playing) {
+        if (!OrbArena.network.ws || OrbArena.network.ws.readyState === WebSocket.CLOSED || OrbArena.network.ws.readyState === WebSocket.CLOSING) {
+            goToMainMenu();
+        }
+    }
+});
+
+OrbArena.ui = {
+    showGame,
+    showDeathScreen,
+    hideDeathScreen,
+    handleStateUpdate,
+    showChallengeResult,
+    goToMainMenu,
+    openChallengeScreen,
+    closeChallengeScreen,
+};

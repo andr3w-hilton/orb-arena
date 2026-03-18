@@ -1,0 +1,8 @@
+.idea/
+__pycache__/
+*.pyc
+*.pyo
+TODO.md
+scores.json
+*.env
+secrets.json

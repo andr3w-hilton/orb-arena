@@ -263,12 +263,13 @@ class GameState:
 
         if current_time < player.boost_cooldown_until:
             return
-        if player.radius <= MIN_RADIUS + BOOST_MASS_COST:
+        if not player.trail_held and player.radius <= MIN_RADIUS + BOOST_MASS_COST:
             return
 
         player.boost_active_until = current_time + BOOST_DURATION
         player.boost_cooldown_until = current_time + BOOST_COOLDOWN
-        player.radius -= BOOST_MASS_COST
+        if not player.trail_held:
+            player.radius -= BOOST_MASS_COST  # waived when deploying trail
 
         # Deploy trail if held
         if player.trail_held:

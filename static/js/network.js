@@ -1,6 +1,21 @@
 window.OrbArena = window.OrbArena || {};
 
 let ws = null;
+let pingInterval = null;
+let pingTimestamp = 0;
+
+function sendPing() {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    pingTimestamp = Date.now();
+    ws.send(JSON.stringify({ type: 'ping', t: pingTimestamp }));
+}
+
+function updatePingDisplay(rtt) {
+    const el = document.getElementById('ping-display');
+    if (!el) return;
+    el.textContent = `${rtt}ms`;
+    el.className = rtt < 50 ? 'good' : rtt < 100 ? 'ok' : 'bad';
+}
 
 function connect(onConnected) {
     // Use secure WebSocket (wss://) for HTTPS, regular (ws://) for HTTP
@@ -12,11 +27,14 @@ function connect(onConnected) {
 
     ws.onopen = () => {
         OrbArena.state.state.connected = true;
+        pingInterval = setInterval(sendPing, 2000);
         if (onConnected) onConnected();
     };
 
     ws.onclose = () => {
         OrbArena.state.state.connected = false;
+        if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
+        updatePingDisplay(0); // clear display
         if (OrbArena.state.state.playing) {
             OrbArena.ui.goToMainMenu();
             return;
@@ -31,6 +49,7 @@ function connect(onConnected) {
 
     ws.onerror = () => {
         OrbArena.state.state.connected = false;
+        if (pingInterval) { clearInterval(pingInterval); pingInterval = null; }
 
         document.getElementById('play-btn').disabled = false;
         document.getElementById('play-btn').textContent = 'DEPLOY';
@@ -87,6 +106,10 @@ function handleMessage(data) {
 
         case 'state':
             OrbArena.ui.handleStateUpdate(data);
+            break;
+
+        case 'pong':
+            updatePingDisplay(Date.now() - data.t);
             break;
 
         case 'challenge_result':

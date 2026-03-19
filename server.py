@@ -1189,6 +1189,7 @@ class GameState:
         self.wormhole_counter = 0
         self.trail_segments: list = []
         self.connections: Dict[str, any] = {}
+        self.pending_pongs: Dict[str, int] = {}  # player_id -> client timestamp to echo back
         self.orb_counter = 0
         self.spike_counter = 0
         self.golden_counter = 0

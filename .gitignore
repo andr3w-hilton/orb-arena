@@ -7,3 +7,4 @@ ARCHITECTURE.md
 scores.json
 *.env
 secrets.json
+game_script_check.js

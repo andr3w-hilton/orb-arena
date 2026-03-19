@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"import websockets; print\\(''ok''\\)\")",
+      "Bash(timeout 5 python server.py)",
+      "Bash(node --check /tmp/game_script.js)",
+      "Bash(gh run:*)"
+    ]
+  }
+}

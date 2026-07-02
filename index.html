@@ -4488,7 +4488,7 @@
             // Major grid lines every 500px - navigational landmarks in a
             // world that otherwise looks identical everywhere
             const majorSize = 500;
-            ctx.strokeStyle = 'rgba(255, 140, 0, 0.11)';
+            ctx.strokeStyle = 'rgba(255, 140, 0, 0.18)';
             const majorStartX = -state.camera.x % majorSize;
             const majorStartY = -state.camera.y % majorSize;
             for (let x = majorStartX; x < vw; x += majorSize) {
@@ -4512,8 +4512,9 @@
                 const colMax = Math.min(4, Math.floor((state.camera.x + vw) / sectorSize));
                 const rowMin = Math.max(0, Math.floor(state.camera.y / sectorSize));
                 const rowMax = Math.min(4, Math.floor((state.camera.y + vh) / sectorSize));
-                ctx.fillStyle = 'rgba(255, 140, 0, 0.04)';
-                ctx.font = "900 170px 'Orbitron', sans-serif";
+                // Slightly stronger on mobile - the zoomed-out view shrinks the glyphs
+                ctx.fillStyle = isMobile() ? 'rgba(255, 140, 0, 0.13)' : 'rgba(255, 140, 0, 0.10)';
+                ctx.font = "900 200px 'Orbitron', sans-serif";
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 for (let c = colMin; c <= colMax; c++) {

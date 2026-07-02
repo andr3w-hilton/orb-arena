@@ -847,9 +847,9 @@
         #leaderboard-list li:last-child { border-bottom: none; }
         #leaderboard-list li.you { color: var(--amber); text-shadow: 0 0 8px rgba(255,140,0,0.3); }
 
-        /* Minimap */
+        /* Minimap - bottom-right, above ping display */
         #minimap {
-            position: fixed; top: 60px; left: 20px;
+            position: fixed; bottom: 44px; right: 20px;
             z-index: 50; display: none;
             background: rgba(4,4,4,0.85);
             border: 1px solid rgba(255,140,0,0.2);
@@ -858,7 +858,7 @@
 
         /* Power-up HUD */
         #powerup-hud {
-            position: fixed; top: 218px; left: 20px;
+            position: fixed; top: 70px; left: 20px;
             padding: 4px 12px; border-radius: 0;
             font-family: 'Share Tech Mono', monospace;
             font-size: 0.65rem; font-weight: normal;
@@ -1031,7 +1031,7 @@
         ====================================================== */
 
         #game-mute-btn {
-            position: fixed; top: 14px; right: 14px; z-index: 50;
+            position: fixed; bottom: 244px; right: 20px; z-index: 50;
             background: rgba(4,4,4,0.6); border: 1px solid #3a2a18;
             color: #7a6858; font-size: 16px;
             width: 34px; height: 34px; border-radius: 0;
@@ -1040,6 +1040,118 @@
         }
         #game-mute-btn:hover { border-color: var(--amber-dim); color: var(--amber-dim); }
         #game-mute-btn.muted { color: var(--red); border-color: var(--red); }
+
+        /* ======================================================
+           SETTINGS
+        ====================================================== */
+
+        #settings-btn {
+            position: fixed; top: 26px; right: 26px; z-index: 105;
+            background: rgba(4,4,4,0.6); border: 1px solid #3a2a18;
+            color: #7a6858; font-size: 16px;
+            width: 34px; height: 34px; border-radius: 0;
+            cursor: pointer; display: flex;
+            align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        #settings-btn:hover { border-color: var(--amber-dim); color: var(--amber-dim); }
+        body.in-game #settings-btn { display: none; }
+
+        #game-settings-btn {
+            position: fixed; bottom: 202px; right: 20px; z-index: 50;
+            background: rgba(4,4,4,0.6); border: 1px solid #3a2a18;
+            color: #7a6858; font-size: 15px;
+            width: 34px; height: 34px; border-radius: 0;
+            cursor: pointer; display: none;
+            align-items: center; justify-content: center; transition: all 0.2s;
+        }
+        #game-settings-btn:hover { border-color: var(--amber-dim); color: var(--amber-dim); }
+        @media (max-width: 768px) {
+            #game-settings-btn { bottom: 152px; right: 12px; width: 30px; height: 30px; font-size: 13px; }
+        }
+
+        #settings-panel {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: none; flex-direction: column;
+            justify-content: center; align-items: center;
+            background: rgba(4,4,4,0.88); z-index: 200;
+        }
+        #settings-card {
+            background: rgba(4,4,4,0.95);
+            border: 1px solid rgba(255,140,0,0.2);
+            padding: 22px 26px;
+            width: 340px; max-width: 92vw;
+            position: relative;
+        }
+        #settings-card::before,
+        #settings-card::after { content: ''; position: absolute; width: 8px; height: 8px; }
+        #settings-card::before { top: -1px; left: -1px; border-top: 1px solid var(--amber); border-left: 1px solid var(--amber); }
+        #settings-card::after  { bottom: -1px; right: -1px; border-bottom: 1px solid var(--amber); border-right: 1px solid var(--amber); }
+        #settings-card h3 {
+            font-size: 0.6rem; letter-spacing: 6px;
+            color: var(--amber-dim); text-transform: uppercase;
+            text-align: center; margin-bottom: 18px;
+        }
+        .settings-row {
+            display: flex; justify-content: space-between; align-items: center;
+            gap: 16px; margin-bottom: 16px;
+            font-size: 0.72rem; letter-spacing: 2px;
+            color: #7a6858; text-transform: uppercase;
+        }
+        .settings-row input[type="range"] {
+            flex: 1; max-width: 160px;
+            accent-color: var(--amber);
+            background: transparent; cursor: pointer;
+        }
+        .settings-toggle {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.68rem; letter-spacing: 2px; text-transform: uppercase;
+            background: transparent; border: 1px solid #3a2a18;
+            color: #5a4a38; padding: 4px 14px; cursor: pointer;
+            border-radius: 0; transition: all 0.2s; min-width: 64px;
+        }
+        .settings-toggle.on { color: var(--green); border-color: rgba(0,255,68,0.4); }
+        .settings-toggle.off { color: var(--red); border-color: rgba(255,34,0,0.4); }
+        #settings-close {
+            display: block; width: 100%; margin-top: 6px;
+            font-family: 'Orbitron', sans-serif; font-weight: 700;
+            font-size: 0.68rem; letter-spacing: 4px; text-transform: uppercase;
+            padding: 0.6rem 0; text-align: center;
+            background: var(--amber); border: 1px solid var(--amber);
+            color: var(--bg); cursor: pointer; transition: all 0.2s;
+            clip-path: polygon(10px 0%, 100% 0%, calc(100% - 10px) 100%, 0% 100%);
+        }
+        #settings-close:hover { background: var(--amber-hi); box-shadow: 0 0 25px rgba(255,140,0,0.4); }
+
+        /* Death screen stats */
+        #death-cause {
+            font-size: 0.72rem; letter-spacing: 4px; text-transform: uppercase;
+            color: var(--red); margin-bottom: 1.2rem; text-align: center;
+        }
+        #death-cause span { color: #ff8877; font-family: 'Orbitron', sans-serif; }
+        .death-stats {
+            display: grid; grid-template-columns: repeat(4, 1fr);
+            gap: 8px; margin-bottom: 1.6rem;
+            width: min(480px, 92vw);
+        }
+        .death-stat {
+            background: rgba(255,140,0,0.02);
+            border: 1px solid rgba(255,140,0,0.12);
+            padding: 10px 6px; text-align: center; position: relative;
+        }
+        .death-stat::before { content: ''; position: absolute; top: -1px; left: -1px; width: 6px; height: 6px; border-top: 1px solid var(--amber-dim); border-left: 1px solid var(--amber-dim); }
+        .death-stat::after  { content: ''; position: absolute; bottom: -1px; right: -1px; width: 6px; height: 6px; border-bottom: 1px solid var(--amber-dim); border-right: 1px solid var(--amber-dim); }
+        .death-stat .ds-label {
+            display: block; font-size: 0.52rem; letter-spacing: 3px;
+            color: #5a4a38; text-transform: uppercase; margin-bottom: 5px;
+        }
+        .death-stat .ds-value {
+            display: block; font-family: 'Orbitron', sans-serif;
+            font-size: 1.05rem; font-weight: 700; color: var(--amber);
+            font-variant-numeric: tabular-nums;
+        }
+        @media (max-width: 480px) {
+            .death-stats { grid-template-columns: repeat(2, 1fr); }
+        }
 
         /* ======================================================
            MOBILE BUTTONS
@@ -1125,9 +1237,9 @@
             #leaderboard { padding: 8px 10px; min-width: 150px; font-size: 0.8rem; }
             #score-display { font-size: 1.4rem; }
             #minimap { /* size set by JS */ }
-            #powerup-hud { top: 168px; }
-            #disaster-hud { top: auto; bottom: 40px; left: calc(50% + 50px); font-size: 0.75rem; padding: 5px 12px; }
-            #game-mute-btn { top: 10px; right: 10px; width: 30px; height: 30px; font-size: 14px; }
+            #powerup-hud { top: 60px; }
+            #disaster-hud { top: 48px; font-size: 0.75rem; padding: 5px 12px; }
+            #game-mute-btn { bottom: 190px; right: 12px; width: 30px; height: 30px; font-size: 14px; }
             .hud-bar, .hud-bar-bot { display: none; }
             .corner { display: none; }
             /* Challenge screen - stack cards */
@@ -1349,6 +1461,24 @@
     <!-- In-Game Mute Button -->
     <button id="game-mute-btn" title="Mute/Unmute">&#128266;</button>
 
+    <!-- Settings -->
+    <button id="settings-btn" title="Settings">&#9881;</button>
+    <button id="game-settings-btn" title="Settings">&#9881;</button>
+    <div id="settings-panel">
+        <div id="settings-card">
+            <h3>// SYSTEMS CONFIG //</h3>
+            <div class="settings-row">
+                <span>Volume</span>
+                <input type="range" id="setting-volume" min="0" max="100" step="5" value="50">
+            </div>
+            <div class="settings-row">
+                <span>Screen Shake</span>
+                <button class="settings-toggle on" id="setting-shake">ON</button>
+            </div>
+            <button id="settings-close">CONFIRM</button>
+        </div>
+    </div>
+
     <!-- HUD -->
     <div id="hud">
         <div id="score-display"><span>0</span></div>
@@ -1370,7 +1500,13 @@
     <!-- Death Screen -->
     <div id="death-screen">
         <h2>YOU WERE CONSUMED!</h2>
-        <p>Final Score: <span id="final-score">0</span></p>
+        <div id="death-cause"></div>
+        <div class="death-stats">
+            <div class="death-stat"><span class="ds-label">Score</span><span class="ds-value" id="final-score">0</span></div>
+            <div class="death-stat"><span class="ds-label">Survived</span><span class="ds-value" id="death-survived">0:00</span></div>
+            <div class="death-stat"><span class="ds-label">Kills</span><span class="ds-value" id="death-kills">0</span></div>
+            <div class="death-stat"><span class="ds-label">Peak Mass</span><span class="ds-value" id="death-peak">0</span></div>
+        </div>
         <button id="respawn-btn">DEPLOY AGAIN</button>
         <button class="main-menu-btn" id="death-menu-btn">ABORT TO MENU</button>
     </div>
@@ -1468,6 +1604,7 @@
             disaster: { active: null, warning: null },
             audioVolume: 0.5,
             audioMuted: false,
+            screenShakeEnabled: true,
             // Challenge mode
             challengeMode: false,
             challengeName: '',
@@ -1484,6 +1621,13 @@
 
         let lastMoveSent = 0;
         let lastLeaderboardJSON = '';
+        // Per-life stats for the death screen
+        const sessionStats = { spawnTime: 0, kills: 0, peakRadius: 0 };
+        function resetSessionStats() {
+            sessionStats.spawnTime = Date.now();
+            sessionStats.kills = 0;
+            sessionStats.peakRadius = state.you ? state.you.radius : 0;
+        }
         let interpMap = {};      // per-player: { prevX, prevY, currX, currY }
         let lastStateTime = 0;  // timestamp of last server state update
         let stateInterval = 33; // measured ms between server states (adapts to jitter)
@@ -2121,6 +2265,7 @@
         }
 
         function triggerScreenShake(intensity) {
+            if (!state.screenShakeEnabled) return;
             vfxShakeIntensity = Math.max(vfxShakeIntensity, intensity);
         }
 
@@ -2362,6 +2507,59 @@
         }
         gameMuteBtn.addEventListener('click', toggleMute);
 
+        // ── Settings (persisted to localStorage) ──
+        const SETTINGS_KEY = 'orbArenaSettings';
+        const settingsPanel = document.getElementById('settings-panel');
+        const settingVolume = document.getElementById('setting-volume');
+        const settingShake = document.getElementById('setting-shake');
+        const gameSettingsBtn = document.getElementById('game-settings-btn');
+
+        function saveSettings() {
+            try {
+                localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+                    volume: state.audioVolume,
+                    shake: state.screenShakeEnabled,
+                    name: nameInput.value.trim(),
+                }));
+            } catch (e) {}
+        }
+
+        function syncSettingsUI() {
+            settingVolume.value = Math.round(state.audioVolume * 100);
+            settingShake.textContent = state.screenShakeEnabled ? 'ON' : 'OFF';
+            settingShake.classList.toggle('on', state.screenShakeEnabled);
+            settingShake.classList.toggle('off', !state.screenShakeEnabled);
+        }
+
+        (function loadSettings() {
+            try {
+                const s = JSON.parse(localStorage.getItem(SETTINGS_KEY));
+                if (s) {
+                    if (typeof s.volume === 'number') state.audioVolume = Math.min(1, Math.max(0, s.volume));
+                    if (typeof s.shake === 'boolean') state.screenShakeEnabled = s.shake;
+                    if (s.name && !nameInput.value) nameInput.value = s.name;
+                }
+            } catch (e) {}
+            syncSettingsUI();
+        })();
+
+        settingVolume.addEventListener('input', () => {
+            state.audioVolume = settingVolume.value / 100;
+            if (ambient.playing) ambient.updateVolume();
+            saveSettings();
+        });
+        settingShake.addEventListener('click', () => {
+            state.screenShakeEnabled = !state.screenShakeEnabled;
+            syncSettingsUI();
+            saveSettings();
+        });
+        function openSettings() { syncSettingsUI(); settingsPanel.style.display = 'flex'; }
+        function closeSettings() { settingsPanel.style.display = 'none'; }
+        document.getElementById('settings-btn').addEventListener('click', openSettings);
+        gameSettingsBtn.addEventListener('click', openSettings);
+        document.getElementById('settings-close').addEventListener('click', closeSettings);
+        settingsPanel.addEventListener('click', (e) => { if (e.target === settingsPanel) closeSettings(); });
+
         // Start ambient music - try immediately, fall back to first user interaction
         function initAudio() {
             if (ambientStarted) return;
@@ -2559,6 +2757,7 @@
             if (state.you && state.you.alive && data.you && data.you.alive) {
                 const scoreDelta = data.you.score - state.you.score;
                 if (scoreDelta > 30) {
+                    sessionStats.kills++;
                     triggerScreenShake(Math.min(12, 4 + scoreDelta / 20));
                     sfx.kill();
 
@@ -2683,6 +2882,9 @@
             prevDisasterActive = newDisaster.active;
 
             if (data.you) state.you = data.you;
+            if (state.you && state.you.alive && state.you.radius > sessionStats.peakRadius) {
+                sessionStats.peakRadius = state.you.radius;
+            }
             state.players = data.players;
             state.sortedPlayers = [...data.players].sort((a, b) => a.radius - b.radius);
             // Update interpolation map: prev = last known, curr = new server position
@@ -2792,6 +2994,8 @@
             hud.style.display = 'block';
             minimap.style.display = 'block';
             gameMuteBtn.style.display = 'flex';
+            gameSettingsBtn.style.display = 'flex';
+            resetSessionStats();
 
             // Fade out ambient music when entering game
             if (ambient.playing) ambient.fadeOut(2);
@@ -2812,23 +3016,59 @@
             }
         }
 
+        function formatSurvival(ms) {
+            const total = Math.max(0, Math.floor(ms / 1000));
+            const m = Math.floor(total / 60);
+            const s = total % 60;
+            return `${m}:${String(s).padStart(2, '0')}`;
+        }
+
         function showDeathScreen() {
             sfx.death();
             finalScore.textContent = state.lastScore;
+            document.getElementById('death-survived').textContent =
+                sessionStats.spawnTime ? formatSurvival(Date.now() - sessionStats.spawnTime) : '--';
+            document.getElementById('death-kills').textContent = sessionStats.kills;
+            document.getElementById('death-peak').textContent = Math.floor(sessionStats.peakRadius);
+
+            // Cause of death from the kill feed (server keeps recent entries)
+            const causeEl = document.getElementById('death-cause');
+            const myName = state.you ? state.you.name : null;
+            let cause = '';
+            if (myName && state.killFeed) {
+                for (let i = state.killFeed.length - 1; i >= 0; i--) {
+                    const k = state.killFeed[i];
+                    if (k.killer === myName && k.victim && k.victim.includes('(exploded)')) {
+                        cause = 'CRITICAL MASS OVERLOAD';
+                        break;
+                    }
+                    if (k.victim === myName) {
+                        const safeKiller = String(k.killer).replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+                        cause = `ELIMINATED BY <span>${safeKiller}</span>`;
+                        break;
+                    }
+                }
+            }
+            causeEl.innerHTML = cause;
+            causeEl.style.display = cause ? 'block' : 'none';
+
             deathScreen.style.display = 'flex';
             boostBtn.style.display = 'none';
             shootBtn.style.display = 'none';
             mineBtn.style.display = 'none';
             powerupHud.style.display = 'none';
             gameMuteBtn.style.display = 'none';
+            gameSettingsBtn.style.display = 'none';
             // Fade ambient back in on death
             if (ambientStarted && !ambient.playing) ambient.fadeIn();
         }
 
         function hideDeathScreen() {
             sfx.respawn();
+            resetSessionStats();
             deathScreen.style.display = 'none';
             gameMuteBtn.style.display = 'flex';
+            gameSettingsBtn.style.display = 'flex';
             // Fade ambient out on respawn
             if (ambient.playing) ambient.fadeOut(2);
         }
@@ -2836,6 +3076,7 @@
         // Join game
         function joinGame(mode = 'player', challenge = null) {
             state.connectionMode = mode;
+            saveSettings(); // remember callsign
 
             if (!state.connected) {
                 // Connect first, then join when connected
@@ -2911,6 +3152,7 @@
             mineBtn.style.display = 'none';
             powerupHud.style.display = 'none';
             gameMuteBtn.style.display = 'none';
+            gameSettingsBtn.style.display = 'none';
             if (ambientStarted && !ambient.playing) ambient.fadeIn();
         }
 
@@ -3092,6 +3334,7 @@
             hud.style.display = 'none';
             leaderboard.style.display = 'none';
             gameMuteBtn.style.display = 'none';
+            gameSettingsBtn.style.display = 'none';
             canvas.style.display = 'none';
             minimap.style.display = 'none';
             boostBtn.style.display = 'none';
@@ -3363,7 +3606,8 @@
                 shootBtn.textContent = 'GROW';
             } else if (state.you.shoot_ready) {
                 shootBtn.classList.remove('cooldown');
-                shootBtn.textContent = 'SHOOT';
+                const msl = state.you.homing_missiles_remaining || 0;
+                shootBtn.textContent = msl > 0 ? `MSL (${msl})` : 'SHOOT';
             } else {
                 shootBtn.classList.add('cooldown');
                 shootBtn.textContent = 'WAIT';
@@ -3755,6 +3999,7 @@
 
         function drawEarthquakeShake(progress) {
             // Screen shake effect — applied as a canvas transform
+            if (!state.screenShakeEnabled) return;
             if (progress > 0 && progress < 1) {
                 const intensity = Math.sin(progress * Math.PI) * 8; // strongest in middle
                 const shakeX = (Math.random() - 0.5) * intensity;
@@ -4088,6 +4333,7 @@
             drawPowerUpPopup();
             drawRallyCountdown();
             drawStrikeAlert();
+            drawDisasterIndicator();
 
             // Draw minimap (hide during fog of war)
             if (state.disaster && state.disaster.active === 'fog_of_war') {
@@ -4095,13 +4341,75 @@
                 minimapCtx.fillStyle = 'rgba(0, 0, 0, 0.9)';
                 minimapCtx.fillRect(0, 0, minimapCanvas.width, minimapCanvas.height);
                 minimapCtx.fillStyle = 'rgba(100, 100, 150, 0.5)';
-                minimapCtx.font = 'bold 12px Segoe UI';
+                minimapCtx.font = '700 12px "Share Tech Mono", monospace';
                 minimapCtx.textAlign = 'center';
                 minimapCtx.textBaseline = 'middle';
                 minimapCtx.fillText('FOG', minimapCanvas.width / 2, minimapCanvas.height / 2);
             } else {
                 drawMinimap();
             }
+        }
+
+        function drawDisasterIndicator() {
+            // Edge-of-screen arrow pointing at a located disaster that's off-screen
+            const d = state.disaster;
+            if (!d || !d.active || !state.you || !state.you.alive) return;
+
+            let tx, ty, color, label;
+            if (d.active === 'black_hole' && d.black_hole) {
+                tx = d.black_hole.x; ty = d.black_hole.y;
+                color = '#cc66ff'; label = 'BLACK HOLE';
+            } else if (d.active === 'supernova' && d.supernova) {
+                tx = d.supernova.x; ty = d.supernova.y;
+                color = '#ff8844'; label = 'SUPERNOVA';
+            } else {
+                return; // other disasters are global or arena-wide
+            }
+
+            // Screen-space position (this runs after the zoom transform is restored)
+            const sx = (tx - state.camera.x) * currentZoom;
+            const sy = (ty - state.camera.y) * currentZoom;
+            if (sx >= 0 && sx <= canvas.width && sy >= 0 && sy <= canvas.height) return;
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const angle = Math.atan2(sy - cy, sx - cx);
+            const dx = Math.cos(angle), dy = Math.sin(angle);
+            const margin = 56;
+            // Ray from screen centre to the screen-rect border (inset by margin)
+            const kx = dx !== 0 ? (dx > 0 ? (canvas.width - margin - cx) / dx : (margin - cx) / dx) : Infinity;
+            const ky = dy !== 0 ? (dy > 0 ? (canvas.height - margin - cy) / dy : (margin - cy) / dy) : Infinity;
+            const k = Math.min(kx, ky);
+            const ex = cx + dx * k;
+            const ey = cy + dy * k;
+
+            const pulse = 0.5 + 0.5 * Math.sin(Date.now() / 180);
+
+            ctx.save();
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 10 + pulse * 8;
+
+            // Arrow
+            ctx.translate(ex, ey);
+            ctx.rotate(angle);
+            ctx.fillStyle = color;
+            ctx.globalAlpha = 0.55 + pulse * 0.45;
+            ctx.beginPath();
+            ctx.moveTo(16, 0);
+            ctx.lineTo(-10, -10);
+            ctx.lineTo(-5, 0);
+            ctx.lineTo(-10, 10);
+            ctx.closePath();
+            ctx.fill();
+            ctx.rotate(-angle);
+
+            // Label below the arrow, kept upright
+            ctx.font = '700 10px "Share Tech Mono", monospace';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.shadowBlur = 4;
+            ctx.fillText(label, 0, 24);
+            ctx.restore();
         }
 
         function drawTouchIndicator() {
@@ -4175,6 +4483,46 @@
                 ctx.moveTo(0, y);
                 ctx.lineTo(vw, y);
                 ctx.stroke();
+            }
+
+            // Major grid lines every 500px - navigational landmarks in a
+            // world that otherwise looks identical everywhere
+            const majorSize = 500;
+            ctx.strokeStyle = 'rgba(255, 140, 0, 0.11)';
+            const majorStartX = -state.camera.x % majorSize;
+            const majorStartY = -state.camera.y % majorSize;
+            for (let x = majorStartX; x < vw; x += majorSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, vh);
+                ctx.stroke();
+            }
+            for (let y = majorStartY; y < vh; y += majorSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(vw, y);
+                ctx.stroke();
+            }
+
+            // Sector labels (A1..E5 across a 5x5 split of the world) - multiplayer
+            // only; challenge maps have their own landmarks (track, turrets)
+            if (!state.challengeMode) {
+                const sectorSize = state.world.width / 5;
+                const colMin = Math.max(0, Math.floor(state.camera.x / sectorSize));
+                const colMax = Math.min(4, Math.floor((state.camera.x + vw) / sectorSize));
+                const rowMin = Math.max(0, Math.floor(state.camera.y / sectorSize));
+                const rowMax = Math.min(4, Math.floor((state.camera.y + vh) / sectorSize));
+                ctx.fillStyle = 'rgba(255, 140, 0, 0.04)';
+                ctx.font = "900 170px 'Orbitron', sans-serif";
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                for (let c = colMin; c <= colMax; c++) {
+                    for (let r = rowMin; r <= rowMax; r++) {
+                        const cx = (c + 0.5) * sectorSize - state.camera.x;
+                        const cy = (r + 0.5) * sectorSize - state.camera.y;
+                        ctx.fillText(String.fromCharCode(65 + c) + (r + 1), cx, cy);
+                    }
+                }
             }
         }
 
@@ -4266,9 +4614,17 @@
             ctx.closePath();
             ctx.fillStyle = '#661100';
             ctx.fill();
-            ctx.strokeStyle = '#ff2200';
-            ctx.lineWidth = 0.8;
+            ctx.strokeStyle = '#ff5533';
+            ctx.lineWidth = 1.6;
             ctx.stroke();
+
+            // Hollow dark core - keeps the silhouette distinct from energy orbs
+            // even at far zoom (shape cue, not just red-vs-green color)
+            ctx.shadowBlur = 0;
+            ctx.fillStyle = '#150402';
+            ctx.beginPath();
+            ctx.arc(screenX, screenY, innerRadius * 0.55, 0, Math.PI * 2);
+            ctx.fill();
             ctx.restore();
         }
 
@@ -4376,7 +4732,7 @@
 
             // Pickup symbol
             ctx.fillStyle = '#cc0000';
-            ctx.font = `bold ${pickup.radius * 1.3}px Arial`;
+            ctx.font = `bold ${pickup.radius * 1.3}px "Share Tech Mono", monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText('✦', screenX, screenY);
@@ -4822,7 +5178,7 @@
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             const fontSize = Math.round(canvas.height * 0.22 * scale);
-            ctx.font = `900 ${fontSize}px 'Segoe UI', Arial, sans-serif`;
+            ctx.font = `900 ${fontSize}px 'Orbitron', sans-serif`;
             ctx.shadowColor = glowColor;
             ctx.shadowBlur = 60;
             // Dark outline for legibility against any background
@@ -4883,7 +5239,7 @@
                     const dy = turret.y - state.you.y;
                     if (dx * dx + dy * dy < 600 * 600) {
                         ctx.save();
-                        ctx.font = `${Math.max(9, 11 / currentZoom)}px Segoe UI`;
+                        ctx.font = `${Math.max(9, 11 / currentZoom)}px "Share Tech Mono", monospace`;
                         ctx.textAlign = 'center';
                         ctx.fillStyle = 'rgba(255,80,0,0.7)';
                         ctx.fillText('TURRET', sx, sy + size + 14);
@@ -5194,12 +5550,12 @@
         function drawKillFeed() {
             if (!state.killFeed || state.killFeed.length === 0) return;
 
-            ctx.font = 'bold 13px Segoe UI';
+            ctx.font = '700 13px "Share Tech Mono", monospace';
             ctx.textAlign = 'left';
 
-            // Position below minimap to avoid overlap
+            // Below the score + power-up chip (minimap now lives bottom-right)
             const isMobile = window.innerWidth <= 768;
-            const startY = 60 + (isMobile ? 100 : 150) + 14; // minimap top + size + border + gap
+            const startY = isMobile ? 104 : 122;
 
             state.killFeed.forEach((kill, index) => {
                 const y = startY + index * 22;
@@ -5278,6 +5634,41 @@
             const canShoot = state.you.shoot_ready && state.you.radius >= PROJECTILE_MIN_RADIUS;
             const shootLabel = state.you.radius < PROJECTILE_MIN_RADIUS ? 'GROW' : 'FIRE';
             drawHudBar(x, y - 32, 180, canShoot, '#ff2200', 'rgba(255,34,0,0.5)', shootLabel);
+
+            // Ammo pips above the bars (only when carrying)
+            let pipY = y - 58;
+            const missiles = state.you.homing_missiles_remaining || 0;
+            if (missiles > 0) {
+                drawAmmoPips(x, pipY, 'MISSILES', missiles, 3, '#ffaa00');
+                pipY -= 20;
+            }
+            const mines = state.you.mines_remaining || 0;
+            if (mines > 0) {
+                drawAmmoPips(x, pipY, 'MINES', mines, 3, '#ff3300');
+            }
+        }
+
+        function drawAmmoPips(x, y, label, count, max, color) {
+            ctx.font = '700 11px "Share Tech Mono", monospace';
+            ctx.textAlign = 'left';
+            ctx.fillStyle = color;
+            ctx.fillText(label, x, y);
+            const pipStart = x + 84;
+            for (let i = 0; i < max; i++) {
+                const px = pipStart + i * 16;
+                if (i < count) {
+                    ctx.save();
+                    ctx.shadowBlur = 6;
+                    ctx.shadowColor = color;
+                    ctx.fillStyle = color;
+                    ctx.fillRect(px, y - 8, 10, 8);
+                    ctx.restore();
+                } else {
+                    ctx.strokeStyle = 'rgba(255,140,0,0.25)';
+                    ctx.lineWidth = 1;
+                    ctx.strokeRect(px, y - 8, 10, 8);
+                }
+            }
         }
 
         function drawPowerUpPopup() {
@@ -5293,7 +5684,7 @@
             const pu = POWERUP_COLORS[state.you.active_powerup];
             const color = pu ? pu.text : '#fff';
 
-            ctx.font = 'bold 22px Segoe UI';
+            ctx.font = "700 18px 'Orbitron', sans-serif";
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.globalAlpha = alpha;
@@ -5363,12 +5754,12 @@
 
             // "CRITICAL MASS" label above player
             ctx.fillStyle = warningColor;
-            ctx.font = 'bold 18px Segoe UI';
+            ctx.font = "700 16px 'Orbitron', sans-serif";
             ctx.textAlign = 'center';
             ctx.fillText('CRITICAL MASS', screenX, screenY - player.radius - 28);
 
             // Countdown below player
-            ctx.font = `bold ${remaining < 10 ? 28 : 22}px Segoe UI`;
+            ctx.font = `700 ${remaining < 10 ? 26 : 20}px 'Orbitron', sans-serif`;
             ctx.fillText(`${Math.ceil(remaining)}s`, screenX, screenY + player.radius + 30);
         }
 
@@ -5652,17 +6043,35 @@
                 ctx.beginPath();
                 ctx.arc(screenX, screenY, player.radius + 5, 0, Math.PI * 2);
                 ctx.stroke();
+            } else if (state.you && state.you.alive && !state.challengeMode) {
+                // Threat ring: can they eat you / can you eat them? (1.2x consume ratio)
+                // Solid vs dashed keeps it readable for colorblind players too.
+                if (player.radius >= state.you.radius * 1.2) {
+                    ctx.strokeStyle = 'rgba(255, 45, 45, 0.75)';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, player.radius + 6, 0, Math.PI * 2);
+                    ctx.stroke();
+                } else if (state.you.radius >= player.radius * 1.2) {
+                    ctx.strokeStyle = 'rgba(0, 255, 100, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([6, 6]);
+                    ctx.beginPath();
+                    ctx.arc(screenX, screenY, player.radius + 6, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
             }
 
             // Name tag
             ctx.fillStyle = player.is_invincible ? '#88ddff' : '#fff';
-            ctx.font = 'bold 14px Segoe UI';
+            ctx.font = '700 14px "Share Tech Mono", monospace';
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(player.name, screenX, screenY - player.radius - 15);
 
             // Size indicator (mass)
-            ctx.font = '12px Segoe UI';
+            ctx.font = '12px "Share Tech Mono", monospace';
             ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
             ctx.fillText(Math.floor(player.radius), screenX, screenY);
 

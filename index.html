@@ -2700,8 +2700,10 @@
             interpMap = nextMap;
             const nowMs = Date.now();
             if (lastStateTime > 0) {
-                // Track actual inter-state gap so interpolation doesn't stutter under jitter
-                stateInterval = Math.min(100, Math.max(20, nowMs - lastStateTime));
+                // Smooth the measured inter-state gap (EMA) so a single bunched or
+                // delayed packet can't collapse/stretch the interpolation window
+                const gap = Math.min(100, Math.max(15, nowMs - lastStateTime));
+                stateInterval += (gap - stateInterval) * 0.15;
             }
             lastStateTime = nowMs;
             state.energyOrbs = data.energy_orbs;
@@ -3793,8 +3795,10 @@
         function update() {
             if (!state.playing) return;
 
-            // Interpolation factor: how far we are into the current server tick [0,1]
-            renderT = Math.min(1, (Date.now() - lastStateTime) / stateInterval);
+            // Interpolation factor: how far we are into the current server tick.
+            // Allowed to run slightly past 1 (extrapolation) so a late packet
+            // doesn't freeze motion mid-tick, which reads as stutter.
+            renderT = Math.min(1.25, (Date.now() - lastStateTime) / stateInterval);
 
             // For spectators, follow highest-scoring player
             let targetPlayer = state.you;

@@ -39,6 +39,7 @@ SPEED_SCALING = 0.2  # Higher = more speed difference between small and large
 ENERGY_ORB_COUNT = 625
 ENERGY_ORB_VALUE = 2
 ENERGY_ORB_RADIUS = 8
+ORB_GRID_CELL = 200  # spatial grid cell size for orb collision broadphase
 SPIKE_ORB_COUNT = 90  # Evil spike orbs
 SPIKE_ORB_RADIUS = 12
 GOLDEN_ORB_COUNT = 30  # Rare golden orbs
@@ -792,7 +793,9 @@ class DisasterManager:
             if self.warning_active and not self.active_disaster:
                 self.warning_active = False
                 self.warning_type = ""
-            return
+            # Still tick/end an already-running disaster so it doesn't freeze
+            if not self.active_disaster:
+                return
 
         # Enough players are present
         if self.timer_paused:
@@ -917,6 +920,10 @@ class DisasterManager:
                 self.game.orb_counter += 1
                 orb_id = f"orb_{self.game.orb_counter}"
                 self.game.energy_orbs[orb_id] = EnergyOrb(id=orb_id, x=ox, y=oy)
+            # Fill any deficit caused by orbs consumed during the event
+            deficit = max(0, ENERGY_ORB_COUNT - len(self.game.energy_orbs))
+            if deficit:
+                self.game.spawn_energy_orbs(deficit)
             self.game._energy_orbs_cache = None
         self.black_hole = None
 
@@ -1616,6 +1623,7 @@ class GameState:
             del self.players[player_id]
         if player_id in self.connections:
             del self.connections[player_id]
+        self.pending_pongs.pop(player_id, None)
 
     def add_spectator(self, spectator_id: str, name: str, websocket) -> Spectator:
         """Add a new spectator to the game."""
@@ -1744,19 +1752,38 @@ class GameState:
         self._process_powerup_respawns(current_time)
 
     def _collect_energy_orbs(self):
-        orbs_to_remove = []
+        # Build spatial grid for broadphase: O(orbs) to build, O(1) per player lookup
+        grid = {}
         for orb_id, orb in self.energy_orbs.items():
-            for player in self.players.values():
-                if not player.alive:
-                    continue
-                dx = player.x - orb.x
-                dy = player.y - orb.y
-                combined = player.radius + orb.radius
-                if dx * dx + dy * dy < combined * combined:
-                    player.radius = min(MAX_RADIUS, player.radius + ENERGY_ORB_VALUE)
-                    player.score += 10
-                    orbs_to_remove.append(orb_id)
-                    break
+            key = (int(orb.x // ORB_GRID_CELL), int(orb.y // ORB_GRID_CELL))
+            if key not in grid:
+                grid[key] = []
+            grid[key].append(orb_id)
+
+        orbs_to_remove = []
+        consumed = set()
+        for player in self.players.values():
+            if not player.alive:
+                continue
+            reach = player.radius + ENERGY_ORB_RADIUS
+            min_cx = int((player.x - reach) // ORB_GRID_CELL)
+            max_cx = int((player.x + reach) // ORB_GRID_CELL)
+            min_cy = int((player.y - reach) // ORB_GRID_CELL)
+            max_cy = int((player.y + reach) // ORB_GRID_CELL)
+            for cx in range(min_cx, max_cx + 1):
+                for cy in range(min_cy, max_cy + 1):
+                    for orb_id in grid.get((cx, cy), []):
+                        if orb_id in consumed:
+                            continue
+                        orb = self.energy_orbs[orb_id]
+                        dx = player.x - orb.x
+                        dy = player.y - orb.y
+                        combined = player.radius + orb.radius
+                        if dx * dx + dy * dy < combined * combined:
+                            player.radius = min(MAX_RADIUS, player.radius + ENERGY_ORB_VALUE)
+                            player.score += 10
+                            consumed.add(orb_id)
+                            orbs_to_remove.append(orb_id)
         if orbs_to_remove:
             for orb_id in orbs_to_remove:
                 del self.energy_orbs[orb_id]
@@ -1873,7 +1900,8 @@ class GameState:
             respawns = [t for t in self.mine_pickup_respawn_timers if current_time >= t]
             if respawns:
                 self.mine_pickup_respawn_timers = [t for t in self.mine_pickup_respawn_timers if current_time < t]
-                self.spawn_mine_pickups()
+                for _ in respawns:
+                    self.spawn_mine_pickups()
 
     def _consume_player(self, consumer, victim):
         """One player consumes another."""
@@ -2041,12 +2069,16 @@ class GameState:
                 damage = HOMING_MISSILE_DAMAGE if isinstance(proj, HomingMissile) else PROJECTILE_DAMAGE
                 player.radius = max(MIN_RADIUS, player.radius - damage)
                 if player.radius <= MIN_RADIUS:
+                    # Victim always dies at min radius; shooter credit is optional
+                    # (shooter may have disconnected or died before the hit landed)
+                    player.alive = False
                     shooter = self.players.get(proj.owner_id)
-                    if shooter and shooter.alive and shooter.radius > player.radius * CONSUME_RATIO:
-                        player.alive = False
+                    if shooter and shooter.alive:
                         shooter.score += KILL_BASE_SCORE + int(player.score * KILL_SCORE_RATIO)
-                        player.score = 0
                         self.add_kill(shooter.name, player.name)
+                    else:
+                        self.add_kill("A stray shot", player.name)
+                    player.score = 0
                 return True
         return False
 
@@ -3251,6 +3283,8 @@ SEND_TIMEOUT = 0.5  # seconds - drop slow clients to prevent buffer buildup
 
 # Rate limiting / connection cap
 MAX_CONNECTIONS = 50
+# Dev-only: allow clients to trigger the disaster test cycle (griefing vector if left on)
+ALLOW_DISASTER_TEST = os.environ.get("ALLOW_DISASTER_TEST") == "1"
 RATE_LIMIT_WINDOW = 1.0   # seconds
 RATE_LIMIT_MAX_MSGS = 120  # max messages per window (30fps move + up to 60 shoots during rapid_fire)
 active_connections = 0
@@ -3647,10 +3681,15 @@ async def handle_client(websocket):
                             game.respawn_player(player_id)
 
                         elif msg_type == "test_disasters":
-                            game.disaster_manager.start_test_cycle(time.time())
+                            if ALLOW_DISASTER_TEST:
+                                game.disaster_manager.start_test_cycle(time.time())
 
                         elif msg_type == "ping":
-                            game.pending_pongs[player_id] = data.get("t", 0)
+                            # Validate: t is spliced into outgoing JSON, so it must be
+                            # a finite number or a client could inject arbitrary JSON
+                            t = data.get("t", 0)
+                            if isinstance(t, (int, float)) and not isinstance(t, bool) and math.isfinite(t):
+                                game.pending_pongs[player_id] = t
 
                     except (json.JSONDecodeError, TypeError, ValueError, KeyError):
                         pass  # Silently drop malformed messages

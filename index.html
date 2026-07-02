@@ -1479,7 +1479,16 @@
             rallyCountdownDigit: 0,
             rallyCountdownDigitTime: 0,
             rallyGoUntil: 0,
+            sortedPlayers: [],
         };
+
+        let lastMoveSent = 0;
+        let lastLeaderboardJSON = '';
+        let interpMap = {};      // per-player: { prevX, prevY, currX, currY }
+        let lastStateTime = 0;  // timestamp of last server state update
+        let stateInterval = 33; // measured ms between server states (adapts to jitter)
+        let renderT = 0;        // interpolation factor [0,1], computed once per frame
+        const INTERP_SNAP_DIST_SQ = 150 * 150; // jumps beyond this snap instead of lerping (teleports/respawns)
 
         // ── Audio Engine (Web Audio API, fully synthesised) ──
         let audioCtx = null;
@@ -2675,6 +2684,26 @@
 
             if (data.you) state.you = data.you;
             state.players = data.players;
+            state.sortedPlayers = [...data.players].sort((a, b) => a.radius - b.radius);
+            // Update interpolation map: prev = last known, curr = new server position
+            const nextMap = {};
+            for (const p of data.players) {
+                const prev = interpMap[p.id];
+                let px = prev ? prev.currX : p.x;
+                let py = prev ? prev.currY : p.y;
+                // Discontinuous jumps (wormhole, respawn, black-hole scatter) snap
+                // instead of streaking the orb across the map for a tick
+                const jx = p.x - px, jy = p.y - py;
+                if (jx * jx + jy * jy > INTERP_SNAP_DIST_SQ) { px = p.x; py = p.y; }
+                nextMap[p.id] = { prevX: px, prevY: py, currX: p.x, currY: p.y };
+            }
+            interpMap = nextMap;
+            const nowMs = Date.now();
+            if (lastStateTime > 0) {
+                // Track actual inter-state gap so interpolation doesn't stutter under jitter
+                stateInterval = Math.min(100, Math.max(20, nowMs - lastStateTime));
+            }
+            lastStateTime = nowMs;
             state.energyOrbs = data.energy_orbs;
             state.spikeOrbs = data.spike_orbs || [];
             state.goldenOrbs = data.golden_orbs || [];
@@ -3764,6 +3793,9 @@
         function update() {
             if (!state.playing) return;
 
+            // Interpolation factor: how far we are into the current server tick [0,1]
+            renderT = Math.min(1, (Date.now() - lastStateTime) / stateInterval);
+
             // For spectators, follow highest-scoring player
             let targetPlayer = state.you;
             if (state.connectionMode === 'spectate') {
@@ -3791,11 +3823,14 @@
                 currentZoom += (targetZoom - currentZoom) * 0.08;
             }
 
-            // Update camera to follow target (zoom-adjusted viewport)
+            // Update camera using interpolated target position to smooth out 30Hz server ticks
             const viewW = canvas.width / currentZoom;
             const viewH = canvas.height / currentZoom;
-            state.camera.x = targetPlayer.x - viewW / 2;
-            state.camera.y = targetPlayer.y - viewH / 2;
+            const camD = interpMap[targetPlayer.id];
+            const camX = camD ? camD.prevX + (camD.currX - camD.prevX) * renderT : targetPlayer.x;
+            const camY = camD ? camD.prevY + (camD.currY - camD.prevY) * renderT : targetPlayer.y;
+            state.camera.x = camX - viewW / 2;
+            state.camera.y = camY - viewH / 2;
 
             // Update score display (only for players)
             if (state.you && state.you.alive) {
@@ -3833,8 +3868,10 @@
                 }
             }
 
-            // Send movement at 30fps
-            if (Date.now() % 33 < 17) {
+            // Send movement at ~30fps
+            const now = Date.now();
+            if (now - lastMoveSent >= 33) {
+                lastMoveSent = now;
                 sendMovement();
             }
 
@@ -3845,6 +3882,10 @@
         }
 
         function updateLeaderboard() {
+            const myName = state.you ? state.you.name : null;
+            const snapshot = JSON.stringify(state.leaderboard) + myName;
+            if (snapshot === lastLeaderboardJSON) return;
+            lastLeaderboardJSON = snapshot;
             leaderboardList.innerHTML = '';
             state.leaderboard.forEach((entry, index) => {
                 const li = document.createElement('li');
@@ -3854,7 +3895,7 @@
                 scoreSpan.textContent = entry.score;
                 li.appendChild(nameSpan);
                 li.appendChild(scoreSpan);
-                if (state.you && entry.name === state.you.name) {
+                if (myName && entry.name === myName) {
                     li.className = 'you';
                 }
                 leaderboardList.appendChild(li);
@@ -3987,11 +4028,11 @@
             renderDisasterEffects();
 
             // Draw players (sorted by size so larger ones appear on top)
-            const sortedPlayers = [...state.players].sort((a, b) => a.radius - b.radius);
-            sortedPlayers.forEach(player => {
-                if (player.alive) {
-                    drawPlayer(player, state.you && player.id === state.you.id);
-                }
+            state.sortedPlayers.forEach(player => {
+                if (!player.alive) return;
+                const pd = interpMap[player.id];
+                const rp = pd ? { ...player, x: pd.prevX + (pd.currX - pd.prevX) * renderT, y: pd.prevY + (pd.currY - pd.prevY) * renderT } : player;
+                drawPlayer(rp, state.you && player.id === state.you.id);
             });
 
             // Draw boss (Hunter Seeker challenge - above players)

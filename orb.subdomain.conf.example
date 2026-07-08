@@ -2,13 +2,13 @@
 # Orb Arena - Multiplayer WebSocket Game
 # Make sure the orb-arena container is running on ports 8080 (HTTP) and 8765 (WebSocket)
 #
-# Copy this file to game.subdomain.conf and replace YOUR_SERVER_IP with your server's IP address.
+# Copy this file to orb.subdomain.conf and replace YOUR_SERVER_IP with your server's IP address.
 
 server {
     listen 443 ssl;
     listen [::]:443 ssl;
 
-    server_name game.*;
+    server_name orb.*;
 
     include /config/nginx/ssl.conf;
 
